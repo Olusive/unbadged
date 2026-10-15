@@ -330,6 +330,17 @@ body.hasplayer main{padding-bottom:calc(150px + env(safe-area-inset-bottom,0px))
 @media (max-width:720px){.bcard{padding:12px 14px;gap:6px}.bcard h3{font-size:17px;margin:0}.bcard p{font-size:13px!important}}
 .roomsep{font-family:var(--f-display);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:10px 13px 4px}
 @media (max-width:720px){.roomsep{display:none}}
+.backbtn{display:none}
+@media (max-width:720px){
+  .backbtn{display:inline-flex;padding-left:0}
+  .chatwrap.hasroom .rooms{display:none}
+  .chatwrap.noroom .thread{display:none}
+  .chatwrap.noroom .rooms{flex-direction:column;overflow-x:hidden;overflow-y:auto;border-bottom:0}
+  .chatwrap.noroom .room{border-right:0;border-bottom:1px solid var(--line);min-width:0}
+  .chatwrap.noroom .roomsep{display:block}
+  .threadhead{justify-content:flex-start}
+  .threadhead>div:first-of-type{flex:1;min-width:0}
+}
 .mobonly{display:none}
 .mobrail{display:none}
 @media (max-width:1060px){.mobrail{display:block;margin-bottom:14px}}
@@ -494,8 +505,8 @@ body.hasplayer main{padding-bottom:calc(150px + env(safe-area-inset-bottom,0px))
 <noscript><p style="padding:20px">Unbadged needs JavaScript turned on.</p></noscript>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/lib.js?v=1792086186"></script>
-<script src="/terms.js?v=1792086186"></script>
-<script src="/main.js?v=1792086186"></script>
+<script src="/lib.js?v=1792086352"></script>
+<script src="/terms.js?v=1792086352"></script>
+<script src="/main.js?v=1792086352"></script>
 </body>
 </html>

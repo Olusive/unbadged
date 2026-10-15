@@ -354,7 +354,7 @@ function renderNav() {
 }
 async function go(view) { S.view = view; S.roomSettings = false; await render(); const m = $("#main"); if (m) m.scrollTop = 0; }
 document.addEventListener("click", e => {
-  const v = e.target.closest("[data-view]"); if (v) { go(v.dataset.view); return; }
+  const v = e.target.closest("[data-view]"); if (v) { if (v.dataset.view === "chats") S.room = null; if (v.dataset.view === "dms") S.dm = null; go(v.dataset.view); return; }
   const b = e.target.closest("[data-board]"); if (b) { S.filter = b.dataset.board; go("home"); return; }
   const u = e.target.closest("[data-user]"); if (u) { e.preventDefault(); openUser(u.dataset.user); return; }
   const p = e.target.closest(".prof"); if (p) p.classList.toggle("show");
@@ -593,21 +593,28 @@ async function renderChats() {
   const fb = S.chatBoard || "All";
   // private groups always show; board chats follow the filter
   const shown = S.rooms.filter(x => x.kind === "group" || fb === "All" || x.board === fb);
-  if (!S.room || !shown.find(r => r.id === S.room)) S.room = (shown[0] || {}).id;
+  if (S.room && !shown.find(r => r.id === S.room)) S.room = null; // nothing opens until you tap a chat
   const r = shown.find(x => x.id === S.room);
   const filterRow = chatBoards.length ? `<div class="chips">${["All", ...chatBoards].map(c => `<button class="chip" data-cboard="${esc(c)}" aria-pressed="${fb === c}">${c === "All" ? "All boards" : esc(c)}</button>`).join("")}</div>` : "";
-  if (!r) { $("#main").innerHTML = `<div class="col"><div class="viewhead"><h1>Group chats</h1><button class="btn small primary" id="newGroup">+ New group chat</button></div>${filterRow}<div class="card" style="padding:20px"><b>No chats yet</b><p class="muted" style="margin:6px 0 0">Every board has its own chats. Join a board and its chats show up here.</p><button class="btn small primary" data-view="boards" style="margin-top:10px">Browse boards</button></div></div>`; $("#newGroup").onclick = newGroupModal; wireChatFilter(); return; }
+  if (!shown.length) { $("#main").innerHTML = `<div class="col"><div class="viewhead"><h1>Group chats</h1><button class="btn small primary" id="newGroup">+ New group chat</button></div>${filterRow}<div class="card" style="padding:20px"><b>No chats yet</b><p class="muted" style="margin:6px 0 0">Every board has its own chats. Join a board and its chats show up here.</p><button class="btn small primary" data-view="boards" style="margin-top:10px">Browse boards</button></div></div>`; $("#newGroup").onclick = newGroupModal; wireChatFilter(); return; }
+  const listHTML = shown.map((x, i) => (x.kind === "public" && (i === 0 || shown[i - 1].kind === "group") && shown.some(g => g.kind === "group") ? '<div class="roomsep">Board chats</div>' : x.kind === "group" && i === 0 ? '<div class="roomsep">Your private groups</div>' : "") + `<button class="room ${x.kind === "public" && !inRoom(x) ? "lockedroom" : ""}" data-room="${x.id}" aria-current="${x.id === S.room}"><b>${x.kind === "group" ? "🔒 " : ""}${esc(x.name)}${ubadge(x.id, (S.unread.get(x.id) || {}).n || 0)}</b><small>${esc(roomSub(x))}</small></button>`).join("");
+  if (!r) {
+    $("#main").innerHTML = `<div class="chatview"><div class="viewhead"><h1>Group chats</h1><button class="btn small primary" id="newGroup">+ New group chat</button></div>
+     ${filterRow}<div class="card chatwrap noroom"><div class="rooms">${listHTML}</div><div class="thread"><div class="lockpane"><b>Pick a chat</b><span>Tap a group or board chat to open it. Messages only show once you open one.</span></div></div></div></div>`;
+    $("#newGroup").onclick = newGroupModal; wireChatFilter(); return;
+  }
   const locked = r.kind === "public" && !inRoom(r);
   if (!S.roomSettings && !locked) { await loadMessages(r.id); if (S.unread.get(r.id)?.n) markRead(r.id); }
   else if (isAdmin(r)) { const { data } = await sb.from("room_bans").select("user_id").eq("room_id", r.id); S.roomBans = (data || []).map(x => x.user_id); if (S.roomBans.some(id => !S.profiles.has(id))) await loadProfiles(); }
   const silenced = (myMember(r) || {}).silenced;
   $("#main").innerHTML = `<div class="chatview"><div class="viewhead"><h1>Group chats</h1><button class="btn small primary" id="newGroup">+ New group chat</button></div>
-   ${filterRow}<div class="card chatwrap"><div class="rooms">${shown.map((x, i) => (x.kind === "public" && (i === 0 || shown[i - 1].kind === "group") && shown.some(g => g.kind === "group") ? '<div class="roomsep">Board chats</div>' : x.kind === "group" && i === 0 ? '<div class="roomsep">Your private groups</div>' : "") + `<button class="room ${x.kind === "public" && !inRoom(x) ? "lockedroom" : ""}" data-room="${x.id}" aria-current="${x.id === S.room}"><b>${x.kind === "group" ? "🔒 " : ""}${esc(x.name)}${ubadge(x.id, (S.unread.get(x.id) || {}).n || 0)}</b><small>${esc(roomSub(x))}</small></button>`).join("")}</div>
-   <div class="thread"><div class="threadhead"><div><h2>${esc(r.name)}</h2><span class="muted mono">${esc(roomSub(r))}</span></div>
+   ${filterRow}<div class="card chatwrap hasroom"><div class="rooms">${listHTML}</div>
+   <div class="thread"><div class="threadhead"><button class="act backbtn" id="rBack">← All chats</button><div><h2>${esc(r.name)}</h2><span class="muted mono">${esc(roomSub(r))}</span></div>
     <button class="btn small" id="roomGear">${COG.replace("<svg", '<svg width="16" height="16" style="vertical-align:-3px"')} ${S.roomSettings ? "Back to chat" : "Settings"}</button></div>
    ${S.roomSettings ? roomSettingsHTML(r) : locked ? `<div class="lockpane"><b>${S.joined.has(r.board) ? "Join this chat" : `Members of ${esc(r.board)} only`}</b><span>${S.joined.has(r.board) ? "You're in " + esc(r.board) + ", so you can join its chat. Leave the board any time and you'll leave the chat too." : "This chat belongs to " + esc(r.board) + ". Join the board to chat here. If you leave the board later, you'll leave the chat too."}</span><button class="btn primary" id="rJoin">${S.joined.has(r.board) ? "Join chat" : "Join " + esc(r.board) + " and this chat"}</button></div>` : `<div class="msgs">${(S.msgs.get(r.id) || []).map(msgHTML).join("") || '<div class="sysmsg">No messages in the last few days. Say something.</div>'}</div>${silenced ? '<div class="sendbar"><span class="fine">An admin muted you in this group. You can read messages but can’t send them.</span></div>' : sendBar("room")}`}
    </div></div></div>`;
   $("#newGroup").onclick = newGroupModal; wireChatFilter();
+  $("#rBack").onclick = () => { S.room = null; S.roomSettings = false; renderChats(); };
   $("#roomGear").onclick = () => { S.roomSettings = !S.roomSettings; renderChats(); };
   const cur = document.querySelector('.room[aria-current="true"]'); if (cur) cur.scrollIntoView({ block: "nearest", inline: "nearest" });
   if (S.roomSettings) return wireRoomSettings(r);
@@ -699,17 +706,18 @@ async function renderDMs() {
   const followsYou = [...S.follows.in].filter(id => !S.follows.out.has(id) && !S.blocks.user.has(id));
   const waiting = [...S.follows.out].filter(id => !S.follows.in.has(id) && !S.blocks.user.has(id));
   const people = [...mut.map(id => [id, "mutual"]), ...followsYou.map(id => [id, "follows you"]), ...waiting.map(id => [id, "you follow"])];
-  if (!S.dm || !people.some(([id]) => id === S.dm)) S.dm = (people[0] || [])[0] || null;
+  if (S.dm && !people.some(([id]) => id === S.dm)) S.dm = null; // nothing opens until you tap someone
   const st = (people.find(([id]) => id === S.dm) || [])[1];
   let room = null;
   S.dmRoom = null;
   if (S.dm && st === "mutual") { const { data, error } = await sb.rpc("open_dm", { other: S.dm }); if (!error) { room = data; S.dmRoom = room; S.dmRooms = [{ id: room, kind: "dm" }]; await loadMessages(room); if (!S.unread.has(room)) await loadUnread(); if (S.unread.get(room)?.n) markRead(room); } }
   $("#main").innerHTML = `<div class="chatview"><div class="viewhead"><h1>Messages</h1><span class="muted" style="font-size:13px">1-on-1 chat opens when you follow each other.</span></div>
-   ${people.length ? `<div class="card chatwrap"><div class="rooms">${people.map(([id, s]) => `<button class="room" data-dm="${id}" aria-current="${id === S.dm}"><b class="mono">${esc(P(id).username)}${(dmRoomOf(id) || [])[0] ? ubadge(dmRoomOf(id)[0], dmRoomOf(id)[1].n) : ""}</b>${s === "mutual" ? '<span class="mutual">✓ Mutual</span>' : `<span class="pending">${s}</span>`}</button>`).join("")}</div>
-   <div class="thread"><div class="threadhead"><div><h2 class="mono" style="font-family:var(--f-mono);font-size:16px">${esc(P(S.dm).username)}</h2>${st === "mutual" ? '<span class="mutual">✓ You follow each other</span>' : ""}</div><div class="row"><button class="btn small" data-rpt='${esc(JSON.stringify({ kind: "account", name: P(S.dm).username }))}'>⚑ Report</button><button class="btn small" data-blk="${S.dm}">⊘ Block</button></div></div>
+   ${people.length ? `<div class="card chatwrap ${S.dm ? "hasroom" : "noroom"}"><div class="rooms">${people.map(([id, s]) => `<button class="room" data-dm="${id}" aria-current="${id === S.dm}"><b class="mono">${esc(P(id).username)}${(dmRoomOf(id) || [])[0] ? ubadge(dmRoomOf(id)[0], dmRoomOf(id)[1].n) : ""}</b>${s === "mutual" ? '<span class="mutual">✓ Mutual</span>' : `<span class="pending">${s}</span>`}</button>`).join("")}</div>
+   ${!S.dm ? `<div class="thread"><div class="lockpane"><b>Pick someone</b><span>Tap a name to open your messages with them. Nothing shows until you do.</span></div></div>` : `<div class="thread"><div class="threadhead"><button class="act backbtn" id="dBack">← All messages</button><div><h2 class="mono" style="font-family:var(--f-mono);font-size:16px">${esc(P(S.dm).username)}</h2>${st === "mutual" ? '<span class="mutual">✓ You follow each other</span>' : ""}</div><div class="row"><button class="btn small" data-rpt='${esc(JSON.stringify({ kind: "account", name: P(S.dm).username }))}'>⚑ Report</button><button class="btn small" data-blk="${S.dm}">⊘ Block</button></div></div>
    ${st === "mutual" && room ? `<div class="msgs">${(S.msgs.get(room) || []).map(msgHTML).join("") || '<div class="sysmsg">Say hi. Only the two of you can see this.</div>'}</div>${sendBar("dm")}`
      : `<div class="lockpane"><b>${st === "follows you" ? "They follow you" : "Waiting on them to follow back"}</b><span>${st === "follows you" ? "Follow back to start a private chat." : "Once they follow you back, you can message each other."}</span>${st === "follows you" ? `<button class="btn primary" data-follow="${S.dm}">Follow back</button>` : ""}</div>`}
-   </div></div>` : `<div class="card" style="padding:20px"><b>No one to message yet</b><p class="muted" style="margin:6px 0 0">Tap someone's username on a post or in a chat and follow them. Once they follow you back, you can message each other here.</p></div>`}</div>`;
+   </div>`}</div>` : `<div class="card" style="padding:20px"><b>No one to message yet</b><p class="muted" style="margin:6px 0 0">Tap someone's username on a post or in a chat and follow them. Once they follow you back, you can message each other here.</p></div>`}</div>`;
+  if ($("#dBack")) $("#dBack").onclick = () => { S.dm = null; renderDMs(); };
   if (room) wireSend("dm", room, renderDMs, { blur: false, note: "Private message. Faces stay visible. Tap anything you want blurred." });
 }
 document.addEventListener("click", async e => {
