@@ -262,6 +262,7 @@ async function renderHome() {
    <div class="viewhead"><h1>${S.filter === "All" ? "Your feed" : esc(S.filter)}</h1><span class="muted" style="font-size:13px">Posting as <span class="mono">${esc(P(S.uid).username)}</span></span></div>
    ${S.filter !== "All" ? `<div class="row boardbar"><span class="fine">Viewing ${esc(S.filter)}</span><span style="flex:1"></span><button class="act" data-rpt='${esc(JSON.stringify({ kind: "board", name: S.filter }))}'>⚑ Report board</button><button class="act" data-bboard="${esc(S.filter)}">⊘ Block board</button></div>` : ""}
    <div class="chips">${filters.map(f => `<button class="chip" data-filter="${esc(f)}" aria-pressed="${S.filter === f}">${esc(f)}</button>`).join("")}</div>
+   <div id="mobBrk" class="mobrail">${breakHTML()}</div>
    ${shiftReportHTML()}
    <div class="card composer">
     <textarea id="draft" maxlength="5000" placeholder="What happened on shift? First line is the title. Vent about the job, not specific people."></textarea>
@@ -399,7 +400,7 @@ async function loadMessages(roomId) {
 function wireSend(id, roomId, redraw, pctx) {
   const inp = $("#" + id + "I"), w = $("#" + id + "W");
   const send = async (body, img_path) => {
-    const { error } = await sb.from("messages").insert({ room_id: roomId, body: body || "", img_path: img_path || null });
+    const { error } = await sb.from("messages").insert({ room_id: roomId, user_id: S.uid, body: body || "", img_path: img_path || null });
     if (error) { toast(errMsg(error)); return false; } await loadMessages(roomId); redraw(); return true;
   };
   const go = async () => { const m = check(inp.value); if (m) { w.hidden = false; w.textContent = m; return; } w.hidden = true; const v = inp.value.trim(); if (!v) return; inp.value = ""; if (!await send(v)) inp.value = v; };
@@ -729,16 +730,17 @@ async function renderOwner() {
 
 /* ---------- right rail ---------- */
 function breakHTML() {
-  return `<div class="card brk"><span class="eyebrow">On break?</span><div class="clock mono" id="clk">${S.brkEnd ? "" : "15:00"}</div>
+  return `<div class="card brk"><span class="eyebrow">On break?</span><div class="clock mono clk">${S.brkEnd ? "" : "15:00"}</div>
    <div class="row">${S.brkEnd ? `<button class="btn small" data-brk="0">End break</button>` : `<button class="btn small primary" data-brk="15">15 min</button><button class="btn small primary" data-brk="30">30 min</button>`}</div>
    <span class="fine"><button class="act" data-view="chats">Join a chat room</button></span></div>`;
 }
-function tick() { const c = $("#clk"); if (!S.brkEnd || !c) return; const s = Math.max(0, Math.round((S.brkEnd - Date.now()) / 1000)); c.textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; if (s === 0) { S.brkEnd = null; drawRail(); toast("Break's over. Clock back in."); } }
+function tick() { if (!S.brkEnd) return; const s = Math.max(0, Math.round((S.brkEnd - Date.now()) / 1000)); const t = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; document.querySelectorAll(".clk").forEach(c => c.textContent = t); if (s === 0) { S.brkEnd = null; drawRail(); toast("Break's over. Clock back in."); } }
 setInterval(tick, 1000);
 function drawRail() {
   $("#rail").innerHTML = breakHTML() + `<div class="card soon"><span class="eyebrow">Coming after beta</span>
    <ul class="soonlist"><li><b>Photo feed</b><span>swipe through everyone's photos</span></li><li><b>Stocks</b><span>watch the companies you work for</span></li><li><b>Jobs</b><span>real pay on every listing</span></li><li><b>Headlines</b><span>news about your company</span></li></ul>
    <button class="btn small" id="soonFb">Tell us what you want first</button></div>`;
+  const mb = $("#mobBrk"); if (mb) mb.innerHTML = breakHTML();
   tick(); $("#soonFb").onclick = () => feedbackModal();
 }
 document.addEventListener("click", e => { const b = e.target.closest("[data-brk]"); if (b) { const m = +b.dataset.brk; S.brkEnd = m ? Date.now() + m * 60000 : null; drawRail(); } });
