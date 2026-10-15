@@ -420,6 +420,8 @@ html,body{overflow-x:hidden;overflow-x:clip;max-width:100%}
   .chatwrap.hasroom .thread .sendbar{flex:none;background:var(--surface)}
   body.chatopen .tabs,body.chatopen .rplayer{visibility:hidden}
 }
+/* no double-tap zoom on phones (pinch to zoom still works; the photo viewer keeps its own double-tap) */
+html,body,button,a,input,select,textarea,label{touch-action:manipulation}
 .mobonly{display:none}
 .mobrail{display:none}
 @media (max-width:1060px){.mobrail{display:block;margin-bottom:14px}}
@@ -584,10 +586,10 @@ html,body{overflow-x:hidden;overflow-x:clip;max-width:100%}
 <noscript><p style="padding:20px">Unbadged needs JavaScript turned on.</p></noscript>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/lib.js?v=1792090485"></script>
-<script src="/holidays.js?v=1792090485"></script>
-<script src="/celebrate.js?v=1792090485"></script>
-<script src="/terms.js?v=1792090485"></script>
-<script src="/main.js?v=1792090485"></script>
+<script src="/lib.js?v=1792090595"></script>
+<script src="/holidays.js?v=1792090595"></script>
+<script src="/celebrate.js?v=1792090595"></script>
+<script src="/terms.js?v=1792090595"></script>
+<script src="/main.js?v=1792090595"></script>
 </body>
 </html>
