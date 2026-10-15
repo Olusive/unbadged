@@ -376,6 +376,12 @@ canvas.celebrate{width:100vw;height:100vh}
 .post.focus{box-shadow:0 0 0 2px var(--accent)}
 /* holiday motion sits behind the app; panels turn slightly see-through so it still shows faintly behind them */
 html[data-holiday] nav.side,html[data-holiday] aside.rail,html[data-holiday] .card,html[data-holiday] .chip:not([aria-pressed="true"]),html[data-holiday] .boardbar,html[data-holiday] .stcard{background-color:color-mix(in srgb,var(--surface) 84%,transparent)}
+.volrow{display:grid;grid-template-columns:auto auto 1fr auto;align-items:center;gap:10px}
+.volrow.dim{opacity:.5}
+.volrow input[type=range]{width:100%;accent-color:var(--accent)}
+.volrow .volicon{font-size:18px}
+.volrow b{min-width:38px;text-align:right;font-size:13px}
+@media (max-width:720px){.volrow{grid-template-columns:auto 1fr auto}.volrow .setlabel{grid-column:1/-1}}
 .mobonly{display:none}
 .mobrail{display:none}
 @media (max-width:1060px){.mobrail{display:block;margin-bottom:14px}}
@@ -540,10 +546,10 @@ html[data-holiday] nav.side,html[data-holiday] aside.rail,html[data-holiday] .ca
 <noscript><p style="padding:20px">Unbadged needs JavaScript turned on.</p></noscript>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/lib.js?v=1792088257"></script>
-<script src="/holidays.js?v=1792088257"></script>
-<script src="/celebrate.js?v=1792088257"></script>
-<script src="/terms.js?v=1792088257"></script>
-<script src="/main.js?v=1792088257"></script>
+<script src="/lib.js?v=1792088460"></script>
+<script src="/holidays.js?v=1792088460"></script>
+<script src="/celebrate.js?v=1792088460"></script>
+<script src="/terms.js?v=1792088460"></script>
+<script src="/main.js?v=1792088460"></script>
 </body>
 </html>

@@ -1,14 +1,24 @@
 /* ---------- post celebrations and fireworks ----------
    celebrate(originEl) runs only after a successful post on Home.
    Sounds are made on the fly with Web Audio (no files to download). */
-let _ac = null;
-const audio = () => { try { _ac = _ac || new (window.AudioContext || window.webkitAudioContext)(); if (_ac.state === "suspended") _ac.resume(); return _ac; } catch (e) { return null; } };
+let _ac = null, _master = null;
+// volume 0–100, saved per device; 0 means no sound. Older "sound off" setting carries over as 0.
+function celebrateVol() {
+  try { const v = localStorage.getItem("ub-celebrateVol"); if (v !== null) return Math.max(0, Math.min(100, +JSON.parse(v))); return JSON.parse(localStorage.getItem("ub-celebrateSound") ?? "true") ? 60 : 0; } catch (e) { return 60; }
+}
+function setCelebrateVolume(v) { if (_master) _master.gain.value = (v / 100) * 1.7; }
+const audio = () => {
+  try {
+    if (!_ac) { _ac = new (window.AudioContext || window.webkitAudioContext)(); _master = _ac.createGain(); _master.connect(_ac.destination); setCelebrateVolume(celebrateVol()); }
+    if (_ac.state === "suspended") _ac.resume(); return _ac;
+  } catch (e) { return null; }
+};
 function tone({ f = 440, f2 = 0, type = "sine", dur = 0.3, vol = 0.05, at = 0, attack = 0.01 }) {
   const a = audio(); if (!a) return;
   const t = a.currentTime + at, o = a.createOscillator(), g = a.createGain();
   o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
   g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur + 0.05);
+  o.connect(g).connect(_master); o.start(t); o.stop(t + dur + 0.05);
 }
 function noise({ dur = 0.4, vol = 0.06, at = 0, freq = 800, kind = "lowpass" }) {
   const a = audio(); if (!a) return;
@@ -16,7 +26,7 @@ function noise({ dur = 0.4, vol = 0.06, at = 0, freq = 800, kind = "lowpass" }) 
   for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
   const src = a.createBufferSource(), fl = a.createBiquadFilter(), g = a.createGain();
   src.buffer = buf; fl.type = kind; fl.frequency.value = freq; g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(fl).connect(g).connect(a.destination); src.start(t);
+  src.connect(fl).connect(g).connect(_master); src.start(t);
 }
 const SOUNDS = {
   spooky: () => { tone({ f: 330, f2: 175, dur: 1.5, vol: 0.05, attack: 0.25 }); tone({ f: 494, f2: 262, dur: 1.5, vol: 0.025, at: 0.06, attack: 0.25 }); },
@@ -134,8 +144,10 @@ const CELEBRATIONS = {
   none: (x, y) => { FX.burst(["🎉", "✨", "🟧", "🟨", "🟦"], x, y, 36); return "pop"; },
 };
 const GENTLE = {halloween: ["🦇","🎃","👻"], christmas: ["🎄","🎁","❄️","🎅"], newyear: ["🎆","🥂","✨"], july4: ["🎆","🇺🇸","⭐"], thanksgiving: ["🦃","🍂","🥧"], veterans: ["🇺🇸","⭐","🎖️"], memorial: ["🇺🇸","🎖️"], mlk: ["🕊️"], presidents: ["🦅","⭐"], valentines: ["❤️","💖","💕"], stpatricks: ["🍀","🪙","🌈"], easter: ["🐇","🥚","🌷"], mothers: ["🌸","💐"], fathers: ["🛠️","🍔","👔"], juneteenth: ["⭐","✨","🎉"], labor: ["🛠️","⚙️","👷"], columbus: ["🍂","🍁"], none: ["🎉","✨"]};
-function celebrate(originEl) {
+function celebrate(originEl, test) {
   try {
+    let on = true; try { on = JSON.parse(localStorage.getItem("ub-celebrate") ?? "true"); } catch (e) {}
+    if (!on && !test) return; // turned off in Settings
     const key = (typeof holidayNow !== "undefined" && holidayNow && holidayNow.key) || "none";
     const r = originEl ? originEl.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 2, width: 0, height: 0 };
     const quiet = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -144,7 +156,6 @@ function celebrate(originEl) {
     if (!document.body.animate) return; // very old browser
     if (!quiet) sound = (CELEBRATIONS[key] || CELEBRATIONS.none)(x, y);
     else { FX.gentle(GENTLE[key] || GENTLE.none, Math.min(Math.max(x, 130), innerWidth - 130), Math.max(y, 180)); const s = (CELEBRATIONS[key] || CELEBRATIONS.none).toString().match(/return "(\w+)"/); sound = s ? s[1] : "pop"; }
-    let soundOn = true; try { soundOn = JSON.parse(localStorage.getItem("ub-celebrateSound") ?? "true"); } catch (e) {}
-    if (soundOn && sound) (typeof sound === "function" ? sound : SOUNDS[sound] || SOUNDS.pop)();
+    if (celebrateVol() > 0 && sound) (typeof sound === "function" ? sound : SOUNDS[sound] || SOUNDS.pop)();
   } catch (e) { console.warn("celebration skipped", e); /* a celebration should never break posting */ }
 }

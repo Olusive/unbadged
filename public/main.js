@@ -1039,9 +1039,12 @@ function renderSettings() {
    <div class="card setcard"><span class="eyebrow">Appearance</span><span class="setlabel">Accent color</span>
     <div class="swatches">${ACCENTS.map(([n, c]) => `<button class="swatch" role="radio" aria-checked="${S.accent === c}" data-accent="${c}" title="${n}" style="background:${c}"><span>${n}</span></button>`).join("")}</div>
     ${holidayNow && !S.holidayPreview ? `<span class="fine">The ${esc(HOLI[holidayNow.key].name)} theme is using its own color right now. Yours comes back when the holiday ends.</span>` : ""}
-    ${sw("sCheer", store.get("celebrateSound", true), "Post celebration sound", "When you post from Home, a little celebration plays to match the holiday. This turns its sound on or off.")}
-    <button class="btn small" id="sCheerTest" style="align-self:flex-start">🎉 Test celebration</button>
-    ${sw("sHoliday", store.get("holidays", true), "Holiday themes", "The app dresses up for holidays: new colors, a festive background, and a banner. Federal holidays start 3 weeks early; others start 1 week early.")}
+    </div>
+   <div class="card setcard"><span class="eyebrow">Celebrations</span>
+    ${sw("sHoliday", store.get("holidays", true), "Holiday themes", "The app dresses up for holidays with new colors, a festive background, a themed menu, and a banner. Turn this off to keep the regular look all year.")}
+    ${sw("sCheerOn", store.get("celebrate", true), "Post celebrations", "A little show plays when you post from Home, like bats for Halloween or fireworks for July 4th.")}
+    <label class="volrow ${store.get("celebrate", true) ? "" : "dim"}"><span class="setlabel" style="margin:0">Celebration sound</span><span class="volicon" id="sVolIcon">${celebrateVol() === 0 ? "🔇" : celebrateVol() < 50 ? "🔉" : "🔊"}</span><input type="range" id="sVol" min="0" max="100" step="5" value="${celebrateVol()}" aria-label="Celebration sound volume" ${store.get("celebrate", true) ? "" : "disabled"}><b class="mono" id="sVolN">${celebrateVol() ? celebrateVol() + "%" : "Off"}</b></label>
+    <button class="btn small" id="sCheerTest" style="align-self:flex-start" ${store.get("celebrate", true) ? "" : "disabled"}>🎉 Test celebration</button>
     ${owner() ? `<span class="setlabel">Preview a holiday (only you see this)</span><select id="sHoliPrev"><option value="">Off, follow the calendar</option>${Object.entries(HOLI).map(([k, t]) => `<option value="${k}" ${S.holidayPreview === k ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select>` : ""}</div>
    <div class="card setcard"><span class="eyebrow">Devices</span>
     <div class="devrow"><span>📱 <b>This device</b></span><span class="okchip">Signed in now</span></div>
@@ -1091,8 +1094,10 @@ function renderSettings() {
   if ($("#lCancel")) $("#lCancel").onclick = () => { S.linkCode = null; renderSettings(); };
   if ($("#qrBox")) drawQR($("#qrBox"), location.origin + "/#link=" + S.linkCode.replace("-", ""));
   $("#sProf").onchange = e => { S.prof = e.target.checked; store.set("prof", S.prof); };
-  $("#sCheer").onchange = e => store.set("celebrateSound", e.target.checked);
-  $("#sCheerTest").onclick = e => celebrate(e.currentTarget);
+  $("#sCheerOn").onchange = e => { store.set("celebrate", e.target.checked); renderSettings(); };
+  const vol = $("#sVol"); vol.oninput = () => { const v = +vol.value; store.set("celebrateVol", v); $("#sVolN").textContent = v ? v + "%" : "Off"; $("#sVolIcon").textContent = v === 0 ? "🔇" : v < 50 ? "🔉" : "🔊"; setCelebrateVolume(v); };
+  vol.onchange = () => { if (+vol.value) SOUNDS.chime(); }; // a quick sample at the new volume
+  $("#sCheerTest").onclick = e => celebrate(e.currentTarget, true);
   $("#sHoliday").onchange = e => { store.set("holidays", e.target.checked); S.holidayPreview = null; applyHoliday(); renderSettings(); };
   if ($("#sHoliPrev")) $("#sHoliPrev").onchange = e => { S.holidayPreview = e.target.value || null; applyHoliday(S.holidayPreview); renderSettings(); };
   document.querySelectorAll("[data-flist]").forEach(b => b.onclick = () => followListModal(b.dataset.flist));
