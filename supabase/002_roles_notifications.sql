@@ -190,3 +190,6 @@ grant execute on function private.can_manage(uuid,uuid) to authenticated;
 -- alter table public.profiles add column if not exists avatar_path text;
 -- alter table public.profiles add constraint avatar_path_own check (avatar_path is null or (avatar_path like id::text || '/avatar-%' and char_length(avatar_path) < 120));
 -- grant update (avatar_path) on public.profiles to authenticated;
+
+-- (applied separately) profile about section
+-- bio text (<=300), interests/hobbies/likes text[] (<=12 each), update granted to authenticated

@@ -26,7 +26,7 @@ const owner = () => P(S.uid).role === "owner";
 const OT = id => P(id).role === "owner" ? FTAG() : "";
 function AV(id, size = "") {
   const p = P(id), pic = p.avatar_path && S.urls.get(p.avatar_path);
-  if (pic) { const im = `<img src="${pic}" alt="" ${size === "lg" ? `data-zoom alt="${esc(p.username)}'s profile photo"` : ""}>`; return p.role === "owner" ? `<span class="av ${size} oav avimg" aria-label="Founder"><span class="oav-in">${im}</span></span>` : `<span class="av ${size} avimg" aria-hidden="${size === "lg" ? "false" : "true"}">${im}</span>`; }
+  if (pic) { const big = size === "lg" || size === "xl", im = `<img src="${pic}" alt="${big ? esc(p.username) + "'s profile photo" : ""}" ${big ? "data-zoom" : ""}>`; return p.role === "owner" ? `<span class="av ${size} oav avimg" aria-label="Founder"><span class="oav-in">${im}</span></span>` : `<span class="av ${size} avimg" aria-hidden="${size === "lg" || size === "xl" ? "false" : "true"}">${im}</span>`; }
   if (p.role === "owner") return OWNER_AV(size);
   const i = Math.max(0, Math.min(9, p.avatar || 0));
   return `<span class="av ${size}" style="background:${AV_COL[i]}" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${AV_GLY[i][1]}"/></svg></span>`;
@@ -226,7 +226,7 @@ function processPhoto(file, pctx, done) {
 
 /* ---------- loading data ---------- */
 async function loadProfiles() {
-  const { data } = await sb.from("profiles").select("id,username,avatar,avatar_path,role,banned,company");
+  const { data } = await sb.from("profiles").select("id,username,avatar,avatar_path,role,banned,company,bio,interests,hobbies,likes");
   S.profiles = new Map((data || []).map(p => [p.id, p]));
   const need = [...S.profiles.values()].map(p => p.avatar_path).filter(x => x && !S.urls.has(x));
   if (need.length) { const { data: sg } = await sb.storage.from("photos").createSignedUrls(need, 86400); (sg || []).forEach(d => { if (d.signedUrl) S.urls.set(d.path, d.signedUrl); }); }
@@ -252,9 +252,8 @@ async function loadBoards() {
     store.set("joined:" + S.uid, [...S.joined]);
   }
 }
-async function loadFeed() {
-  const { data: posts } = await sb.from("posts").select("id,user_id,board,title,body,strong,img_path,created_at").order("created_at", { ascending: false }).limit(100);
-  const list = posts || [], ids = list.map(p => p.id);
+async function enrichPosts(list) {
+  const ids = list.map(p => p.id);
   let cms = [], vts = [];
   if (ids.length) {
     const [c, v] = await Promise.all([
@@ -269,9 +268,20 @@ async function loadFeed() {
     p.score = pv.reduce((a, v) => a + v.value, 0);
     p.my = (pv.find(v => v.user_id === S.uid) || {}).value || 0;
   });
-  S.posts = list;
   await signUrls(list.map(p => p.img_path));
+  return list;
 }
+async function loadFeed() {
+  const { data: posts } = await sb.from("posts").select("id,user_id,board,title,body,strong,img_path,created_at").order("created_at", { ascending: false }).limit(100);
+  S.posts = await enrichPosts(posts || []);
+}
+async function loadUserPosts(id) {
+  const { data } = await sb.from("posts").select("id,user_id,board,title,body,strong,img_path,created_at").eq("user_id", id).order("created_at", { ascending: false }).limit(60);
+  S.uPosts = await enrichPosts(data || []); S.uPostsFor = id;
+}
+const findPost = id => S.posts.find(x => x.id == id) || (S.uPosts || []).find(x => x.id == id);
+async function reloadPosts() { if (S.view === "profile") { await loadUserPosts(S.profileId); S.feedLoaded = false; } else await loadFeed(); }
+const rerenderPosts = () => S.view === "profile" ? renderProfile() : renderHome();
 async function loadShift() {
   const [r, m] = await Promise.all([sb.rpc("shift_results"), sb.from("shift_answers").select("choice").eq("day", chicagoDay()).maybeSingle()]);
   const counts = [0, 0, 0, 0]; (r.data || []).forEach(x => counts[x.choice] = Number(x.n));
@@ -330,6 +340,7 @@ function renderNav() {
   const me = P(S.uid);
   $("#meHandle").textContent = me.username; $("#meHandle").classList.toggle("oname", me.role === "owner");
   $("#meTag").innerHTML = OT(S.uid); $("#meAv").innerHTML = AV(S.uid, "sm"); $("#meCog").innerHTML = COG;
+  ["#meAv", "#meHandle"].forEach(k => { const el = $(k); el.dataset.user = S.uid; el.style.cursor = "pointer"; el.title = "Your profile"; });
   $("#navBottom").innerHTML = `<button class="navbtn" data-view="settings" ${S.view === "settings" ? 'aria-current="page"' : ""}>${COG}<span>Settings</span></button>`;
 }
 async function go(view) { S.view = view; S.roomSettings = false; await render(); const m = $("#main"); if (m) m.scrollTop = 0; }
@@ -415,10 +426,10 @@ document.addEventListener("click", async e => {
   if (pl) { const { error } = await sb.from("shift_answers").insert({ choice: +pl.dataset.poll }); if (error) toast(errMsg(error)); await loadShift(); renderHome(); toast("Counted. Come back tomorrow for a new question."); return; }
   const v = e.target.closest("[data-vote]");
   if (v) {
-    const p = S.posts.find(x => x.id == v.closest(".post").dataset.id), n = +v.dataset.vote;
+    const p = findPost(v.closest(".post").dataset.id), n = +v.dataset.vote;
     const res = p.my === n ? await sb.from("votes").delete().eq("post_id", p.id).eq("user_id", S.uid) : await sb.from("votes").upsert({ post_id: p.id, user_id: S.uid, value: n });
     if (res.error) { toast(errMsg(res.error)); return; }
-    p.score += (p.my === n ? -n : n - p.my); p.my = p.my === n ? 0 : n; renderHome(); return;
+    p.score += (p.my === n ? -n : n - p.my); p.my = p.my === n ? 0 : n; const q = S.posts.find(x => x.id === p.id); if (q && q !== p) { q.score = p.score; q.my = p.my; } rerenderPosts(); return;
   }
   const c = e.target.closest("[data-cmt]"); if (c) { const el = $("#c" + c.dataset.cmt); el.hidden = !el.hidden; S.openC = el.hidden ? null : +c.dataset.cmt; return; }
   const rp = e.target.closest("[data-reply]");
@@ -427,12 +438,12 @@ document.addEventListener("click", async e => {
     if (m) { w.hidden = false; w.textContent = m; return; } if (!inp.value.trim()) return;
     busy(rp, true, "…"); const { error } = await sb.from("comments").insert({ post_id: id, body: inp.value.trim() });
     if (error) { busy(rp, false); toast(errMsg(error)); return; }
-    S.openC = id; await loadFeed(); renderHome(); return;
+    S.openC = id; await reloadPosts(); rerenderPosts(); return;
   }
   const dp = e.target.closest("[data-delpost]");
-  if (dp) { const { error } = await sb.from("posts").delete().eq("id", +dp.dataset.delpost); if (error) { toast(errMsg(error)); return; } await loadFeed(); renderHome(); toast("Post deleted"); return; }
+  if (dp) { const { error } = await sb.from("posts").delete().eq("id", +dp.dataset.delpost); if (error) { toast(errMsg(error)); return; } await reloadPosts(); rerenderPosts(); toast("Post deleted"); return; }
   const orm = e.target.closest("[data-oremove]");
-  if (orm) { const { error } = await sb.rpc("remove_post", { p_id: +orm.dataset.oremove }); if (error) { toast(errMsg(error)); return; } await loadFeed(); renderHome(); toast("Post removed for everyone"); return; }
+  if (orm) { const { error } = await sb.rpc("remove_post", { p_id: +orm.dataset.oremove }); if (error) { toast(errMsg(error)); return; } await reloadPosts(); rerenderPosts(); toast("Post removed for everyone"); return; }
 });
 
 /* ---------- pay check ---------- */
@@ -694,25 +705,74 @@ function followListModal(tab) {
    <div class="picklist">${ids.map(row).join("") || `<span class="fine" style="padding:8px 0">${tab === "followers" ? "Nobody follows you yet. Post and chat, and people will find you." : "You're not following anyone yet. Tap a username on a post or in a chat to follow them."}</span>`}</div>
    <span class="fine">When you follow each other, you can message and add each other to group chats.</span>`);
   document.querySelectorAll("[data-ftab]").forEach(b => b.onclick = () => followListModal(b.dataset.ftab));
-  document.querySelectorAll("[data-fl]").forEach(b => b.onclick = async () => { await follow(b.dataset.fl, b.dataset.on === "true"); followListModal(tab); if (S.view === "settings") renderSettings(); });
+  document.querySelectorAll("[data-fl]").forEach(b => b.onclick = async () => { await follow(b.dataset.fl, b.dataset.on === "true"); followListModal(tab); if (S.view === "settings") renderSettings(); if (S.view === "profile") renderProfile(); });
 }
 
 /* ---------- profiles, report & block ---------- */
 function openUser(id) {
-  const p = P(id), blocked = S.blocks.user.has(id), fol = S.follows.out.has(id);
-  const close = modal(`<div class="pmhead"><h2>Profile</h2><button class="btn small" id="pmX">Close</button></div>
-   <div class="row" style="gap:12px">${AV(id, "lg")}<div><b class="mono ${p.role === "owner" ? "oname" : ""}" style="font-size:17px">${esc(p.username)}</b>${OT(id)}<div class="fine">${p.company ? esc(p.company) + " · " : ""}${S.follows.in.has(id) ? "Follows you" : "Anonymous member"}${blocked ? " · blocked" : ""}</div><div class="fine mono" id="uCounts">&nbsp;</div></div></div>
-   <div class="row">${blocked ? "" : `<button class="btn small ${fol ? "" : "primary"}" id="uFollow">${fol ? "✓ Following" : "+ Follow"}</button>${mutual(id) ? '<button class="btn small" id="uMsg">Message</button>' : ""}`}
-   <span style="flex:1"></span><button class="btn small" id="uRpt">⚑ Report</button>${blocked ? '<button class="btn small" id="uUnblk">Unblock</button>' : '<button class="btn small" id="uBlk">⊘ Block</button>'}</div>
-   ${owner() && p.role !== "owner" ? `<div class="row ownerbox"><span class="fine" style="flex:1">Owner tools</span><button class="btn small" id="oRem">Remove their posts</button><button class="btn small dangerbtn" id="oBan">${p.banned ? "Unban" : "Ban account"}</button></div>` : ""}`);
-  followCounts(id).then(c => { const el = $("#uCounts"); if (el) el.textContent = `${c.followers} follower${c.followers === 1 ? "" : "s"} · ${c.following} following`; });
-  if ($("#uFollow")) $("#uFollow").onclick = async () => { await follow(id, !fol); close(); openUser(id); };
-  if ($("#uMsg")) $("#uMsg").onclick = () => { close(); S.dm = id; go("dms"); };
-  $("#uRpt").onclick = () => reportModal({ kind: "account", name: p.username });
+  const ov = $("#photoModal"); if (ov && !ov.hidden) { ov.hidden = true; ov.innerHTML = ""; }
+  if (S.view !== "profile") S.prevView = S.view;
+  S.profileId = id; S.pTab = "posts"; S.uPostsFor = null; go("profile");
+}
+const tagList = arr => (arr || []).map(t => `<span class="tag">${T(t)}</span>`).join("");
+async function renderProfile() {
+  const id = S.profileId || S.uid, p = P(id), me = isMe(id), blocked = S.blocks.user.has(id), fol = S.follows.out.has(id);
+  if (S.uPostsFor !== id) await loadUserPosts(id);
+  const c = await followCounts(id);
+  if (S.view !== "profile" || (S.profileId || S.uid) !== id) return;
+  const posts = blocked ? [] : S.uPosts.filter(x => !(S.hideLang && x.strong && !me)), photos = posts.filter(x => x.img_path), tab = S.pTab || "posts";
+  const about = [["Interests", p.interests], ["Hobbies", p.hobbies], ["Things I like", p.likes]].filter(([, a]) => a && a.length);
+  const stat = (n, label, list) => me && list ? `<button class="followstat" data-flist="${list}"><b class="mono">${n}</b><span>${label}</span></button>` : `<div class="followstat static"><b class="mono">${n}</b><span>${label}</span></div>`;
+  $("#main").innerHTML = `<div class="col">
+   <button class="act" id="pBack" style="align-self:flex-start">← Back</button>
+   <div class="card profhead">
+    <div class="row" style="gap:14px;flex-wrap:nowrap">${AV(id, "xl")}<div style="min-width:0"><div class="row" style="gap:6px"><b class="mono ${p.role === "owner" ? "oname" : ""}" style="font-size:20px;word-break:break-all">${esc(p.username)}</b>${OT(id)}</div>
+     <div class="fine">${p.company ? esc(p.company) + " · " : ""}${me ? "This is you" : S.follows.in.has(id) && fol ? "You follow each other" : S.follows.in.has(id) ? "Follows you" : "Anonymous member"}${blocked ? " · blocked" : ""}${p.banned ? " · banned" : ""}</div></div></div>
+    ${p.bio && !blocked ? `<p class="pbio">${T(p.bio)}</p>` : me ? '<p class="fine" style="margin:0">Add a short bio so people know what you do. Keep it vague enough that work can’t pick you out.</p>' : ""}
+    <div class="row followrow">${stat(c.followers, "Followers", "followers")}${stat(c.following, "Following", "following")}${stat(posts.length, "Posts")}</div>
+    <div class="row">${me ? '<button class="btn small primary" id="pEdit">Edit profile</button><button class="btn small" data-view="settings">Settings</button>'
+      : blocked ? '<button class="btn small" id="uUnblk">Unblock</button>'
+      : `<button class="btn small ${fol ? "" : "primary"}" id="uFollow">${fol ? "✓ Following" : "+ Follow"}</button>${mutual(id) ? '<button class="btn small" id="uMsg">Message</button>' : ""}<span style="flex:1"></span><button class="btn small" id="uRpt">⚑ Report</button><button class="btn small" id="uBlk">⊘ Block</button>`}</div>
+    ${owner() && p.role !== "owner" ? `<div class="row ownerbox"><span class="fine" style="flex:1">Owner tools</span><button class="btn small" id="oRem">Remove their posts</button><button class="btn small dangerbtn" id="oBan">${p.banned ? "Unban" : "Ban account"}</button></div>` : ""}
+   </div>
+   ${blocked ? "" : `<div class="card setcard"><span class="eyebrow">About</span>
+    ${about.length ? about.map(([l, a]) => `<div class="psec"><span class="setlabel">${l}</span><div class="tags">${tagList(a)}</div></div>`).join("") : `<span class="fine">${me ? "Add your interests, hobbies, and things you like with Edit profile." : "Nothing here yet."}</span>`}</div>
+   <div class="seg2" role="tablist"><button role="tab" aria-selected="${tab === "posts"}" data-ptab="posts">Posts · ${posts.length}</button><button role="tab" aria-selected="${tab === "photos"}" data-ptab="photos">Photos · ${photos.length}</button></div>
+   ${tab === "photos" ? (photos.length ? `<div class="pgrid">${photos.map(x => `<div class="pcell">${img(x.img_path, "Photo posted by " + p.username)}</div>`).join("")}</div>` : `<div class="card" style="padding:20px"><span class="muted">${me ? "Photos you add to posts show up here." : "No photos yet."}</span></div>`)
+     : (posts.map(postHTML).join("") || `<div class="card" style="padding:20px"><span class="muted">${me ? "You haven’t posted yet. Your posts show up here." : "No posts yet."}</span></div>`)}`}
+  </div>`;
+  $("#pBack").onclick = () => go(S.prevView && S.prevView !== "profile" ? S.prevView : "home");
+  document.querySelectorAll("[data-ptab]").forEach(b => b.onclick = () => { S.pTab = b.dataset.ptab; renderProfile(); });
+  document.querySelectorAll("[data-flist]").forEach(b => b.onclick = () => followListModal(b.dataset.flist));
+  if ($("#pEdit")) $("#pEdit").onclick = editProfileModal;
+  if ($("#uFollow")) $("#uFollow").onclick = async () => { await follow(id, !fol); renderProfile(); };
+  if ($("#uMsg")) $("#uMsg").onclick = () => { S.dm = id; go("dms"); };
+  if ($("#uRpt")) $("#uRpt").onclick = () => reportModal({ kind: "account", name: p.username });
   if ($("#uBlk")) $("#uBlk").onclick = () => confirmBlock(id);
-  if ($("#uUnblk")) $("#uUnblk").onclick = async () => { await sb.from("blocks").delete().eq("kind", "user").eq("target", id); S.blocks.user.delete(id); close(); render(); toast("Unblocked " + p.username); };
-  if ($("#oRem")) $("#oRem").onclick = async () => { const { error } = await sb.rpc("remove_user_posts", { uname: p.username }); if (error) { toast(errMsg(error)); return; } S.feedLoaded = false; close(); render(); toast("Removed posts by " + p.username); };
-  if ($("#oBan")) $("#oBan").onclick = async () => { const { error } = await sb.rpc("ban_user", { uname: p.username, do_ban: !p.banned }); if (error) { toast(errMsg(error)); return; } await loadProfiles(); S.feedLoaded = false; close(); render(); toast(p.banned ? "Unbanned" : p.username + " is banned"); };
+  if ($("#uUnblk")) $("#uUnblk").onclick = async () => { await sb.from("blocks").delete().eq("kind", "user").eq("target", id); S.blocks.user.delete(id); renderProfile(); toast("Unblocked " + p.username); };
+  if ($("#oRem")) $("#oRem").onclick = async () => { const { error } = await sb.rpc("remove_user_posts", { uname: p.username }); if (error) { toast(errMsg(error)); return; } S.feedLoaded = false; S.uPostsFor = null; renderProfile(); toast("Removed posts by " + p.username); };
+  if ($("#oBan")) $("#oBan").onclick = async () => { const { error } = await sb.rpc("ban_user", { uname: p.username, do_ban: !p.banned }); if (error) { toast(errMsg(error)); return; } await loadProfiles(); S.feedLoaded = false; renderProfile(); toast(p.banned ? "Unbanned" : p.username + " is banned"); };
+}
+function editProfileModal() {
+  const me = P(S.uid), j = a => (a || []).join(", ");
+  const field = (id, label, val, ph) => `<span class="setlabel">${label}</span><input type="text" id="${id}" value="${esc(val)}" placeholder="${ph}" maxlength="400">`;
+  const close = modal(`<div class="pmhead"><h2>Edit profile</h2><button class="btn small" id="pmX">Cancel</button></div>
+   <span class="setlabel">Bio</span><textarea id="eBio" rows="3" maxlength="300" placeholder="Overnight stocker, 6 years in. Coffee runs on 3 hours of sleep." style="resize:vertical;border:1px solid var(--line);border-radius:6px;padding:8px 9px;background:var(--surface-2)">${esc(me.bio || "")}</textarea>
+   ${field("eInt", "Interests", j(me.interests), "Cars, fishing, true crime")}
+   ${field("eHob", "Hobbies", j(me.hobbies), "Gaming, lifting, woodworking")}
+   ${field("eLike", "Things I like", j(me.likes), "Dr Pepper, country music, payday")}
+   <span class="fine">Separate with commas. Up to 12 each. Everyone can see your profile, so skip anything that points to you, like your store number or real name.</span>
+   <div class="warn" id="eW" hidden></div>
+   <div class="row" style="justify-content:flex-end"><button class="btn primary" id="eSave">Save</button></div>`);
+  const list = v => [...new Set(v.split(",").map(x => x.trim().replace(/\s+/g, " ")).filter(Boolean).map(x => x.slice(0, 30)))].slice(0, 12);
+  $("#eSave").onclick = async () => {
+    const bio = $("#eBio").value.trim(), interests = list($("#eInt").value), hobbies = list($("#eHob").value), likes = list($("#eLike").value), w = $("#eW");
+    const m = [bio, ...interests, ...hobbies, ...likes].map(check).find(Boolean); if (m) { w.hidden = false; w.textContent = m; return; }
+    busy($("#eSave"), true, "Saving…");
+    const { error } = await sb.from("profiles").update({ bio, interests, hobbies, likes }).eq("id", S.uid);
+    if (error) { busy($("#eSave"), false); w.hidden = false; w.textContent = errMsg(error); return; }
+    Object.assign(me, { bio, interests, hobbies, likes }); close(); renderProfile(); toast("Profile saved");
+  };
 }
 function confirmBlock(id) {
   const close = modal(`<div class="pmhead"><h2>Block ${esc(P(id).username)}?</h2><button class="btn small" id="pmX">Cancel</button></div>
@@ -839,6 +899,7 @@ function renderSettings() {
    <div class="viewhead"><h1>Settings</h1></div>
    <div class="card setcard"><span class="eyebrow">Account</span>
     <div class="row" style="gap:12px"><span id="setAv">${AV(S.uid, "lg")}</span><div><b class="mono ${me.role === "owner" ? "oname" : ""}" style="font-size:17px">${esc(me.username)}</b>${OT(S.uid)}<div class="fine">18+ confirmed · ${me.role === "owner" ? "Owner" : "Beta tester"}${me.company ? " · " + esc(me.company) : ""}</div></div></div>
+    <button class="btn small" data-user="${S.uid}" style="align-self:flex-start">View my profile</button>
     <div class="row followrow"><button class="followstat" data-flist="followers"><b class="mono">${S.follows.in.size}</b><span>Followers</span></button><button class="followstat" data-flist="following"><b class="mono">${S.follows.out.size}</b><span>Following</span></button></div>
     <span class="setlabel">Profile photo</span>
     <div class="row"><button class="btn small primary" id="sPhoto">${me.avatar_path ? "Change photo" : "Upload a photo"}</button>${me.avatar_path ? '<button class="btn small" id="sPhotoX">Remove photo</button>' : ""}</div>
@@ -1128,7 +1189,7 @@ function startLive() {
 /* ---------- render & boot ---------- */
 async function render() {
   renderNav();
-  const views = { home: renderHome, pay: renderPay, boards: renderBoards, chats: renderChats, dms: renderDMs, settings: renderSettings, owner: renderOwner, terms: renderTerms };
+  const views = { home: renderHome, pay: renderPay, boards: renderBoards, chats: renderChats, dms: renderDMs, settings: renderSettings, owner: renderOwner, terms: renderTerms, profile: renderProfile };
   try { await (views[S.view] || renderHome)(); } catch (e) { console.error(e); toast("Couldn't load that. Check your connection and try again."); }
   drawRail();
 }
