@@ -541,7 +541,7 @@ function payRowsHTML() {
   const cat = S.payCat || "All", q = (S.payQ || "").toLowerCase();
   const rows = WAGES.filter(w => (cat === "All" || w.cat === cat) && (!q || wLabel(w).toLowerCase().includes(q)));
   if (!rows.length) return `<tr><td colspan="5" class="fine">No jobs match that search.</td></tr>`;
-  return rows.map(w => { const p = payStats(w); return `<tr><td>${esc(wLabel(w))}<div class="fine">${esc(w.cat)}</div></td><td class="mono">$${p.lo.toFixed(2)}</td><td class="mono"><b>$${p.med.toFixed(2)}</b></td><td class="mono">$${p.hi.toFixed(2)}</td><td class="fine" title="${esc("Public figure: " + w.bls)}">${paySrc(p)}</td></tr>`; }).join("");
+  return rows.map(w => { const p = payStats(w); return `<tr><td class="pjob"><b>${esc(wLabel(w))}</b><div class="fine">${esc(w.cat)}</div></td><td class="mono" data-label="Low">$${p.lo.toFixed(2)}</td><td class="mono pmed" data-label="Median"><b>$${p.med.toFixed(2)}</b></td><td class="mono" data-label="High">$${p.hi.toFixed(2)}</td><td class="fine psrc" data-label="Based on" title="${esc("Public figure: " + w.bls)}">${paySrc(p)}</td></tr>`; }).join("");
 }
 async function loadWages() { const { data } = await sb.rpc("wage_stats"); S.wages = new Map((data || []).map(r => [r.role_key, r])); }
 async function renderPay() {
@@ -557,7 +557,7 @@ async function renderPay() {
    <div id="pOut"></div>
    <div class="viewhead" style="margin-top:6px"><h2 style="font-size:22px">Pay by job</h2><input type="text" id="pSearch" placeholder="Search jobs, like welder" value="${esc(S.payQ || "")}" style="min-width:0;flex:0 1 220px"></div>
    <div class="chips">${["All", ...WAGE_CATS].map(c => `<button class="chip" data-pcat="${c}" aria-pressed="${cat === c}">${c}</button>`).join("")}</div>
-   <div class="card" style="overflow-x:auto"><table class="wt"><thead><tr><th>Job</th><th>Low</th><th>Median</th><th>High</th><th>Based on</th></tr></thead><tbody id="pRows">${payRowsHTML()}</tbody></table></div>
+   <div class="card paycard"><table class="wt paytable"><thead><tr><th>Job</th><th>Low</th><th>Median</th><th>High</th><th>Based on</th></tr></thead><tbody id="pRows">${payRowsHTML()}</tbody></table></div>
    <p class="fine">Hourly pay. Starting numbers are national figures from the ${PAY_SOURCE}. Company rows use the national figure for that type of job until members report. Low and high are the 10th and 90th percentile. As members share, their reports count more: at ${PAY_K} reports a job is half public data, half member reports, and the member side keeps growing from there.</p>
   </div>`;
   document.querySelectorAll("[data-pcat]").forEach(b => b.onclick = () => { S.payCat = b.dataset.pcat; document.querySelectorAll("[data-pcat]").forEach(x => x.setAttribute("aria-pressed", x === b)); $("#pRows").innerHTML = payRowsHTML(); });

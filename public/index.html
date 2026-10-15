@@ -392,6 +392,22 @@ html,body{overflow-x:hidden;overflow-x:clip;max-width:100%}
 #ptr.spin .ptr-i{display:inline-block;animation:ptrspin .8s linear infinite}
 @keyframes ptrspin{to{transform:rotate(360deg)}}
 #main{overscroll-behavior-y:contain}
+.paycard{overflow-x:auto}
+.paytable .pjob b{font-weight:600}
+@media (max-width:720px){
+  .paycard{overflow-x:visible;padding:4px 14px}
+  table.wt.paytable,.paytable tbody{display:block;width:100%;min-width:0}
+  .paytable thead{display:none}
+  .paytable tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 10px;padding:13px 0;border-bottom:1px solid var(--line)}
+  .paytable tr:last-child{border-bottom:0}
+  .paytable td{display:flex;flex-direction:column;gap:1px;padding:0;border:0;min-width:0}
+  .paytable td.pjob{grid-column:1/-1;font-size:15px}
+  .paytable td[data-label]::before{content:attr(data-label);font-family:var(--f-display);font-weight:600;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .paytable td.mono{font-size:15px}
+  .paytable td.pmed{background:var(--accent-soft);border-radius:6px;padding:4px 8px;margin:-4px 0}
+  .paytable td.psrc{grid-column:1/-1;flex-direction:row;gap:6px;align-items:baseline}
+  .paytable td.psrc::before{font-size:10px}
+}
 .mobonly{display:none}
 .mobrail{display:none}
 @media (max-width:1060px){.mobrail{display:block;margin-bottom:14px}}
@@ -556,10 +572,10 @@ html,body{overflow-x:hidden;overflow-x:clip;max-width:100%}
 <noscript><p style="padding:20px">Unbadged needs JavaScript turned on.</p></noscript>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/lib.js?v=1792088943"></script>
-<script src="/holidays.js?v=1792088943"></script>
-<script src="/celebrate.js?v=1792088943"></script>
-<script src="/terms.js?v=1792088943"></script>
-<script src="/main.js?v=1792088943"></script>
+<script src="/lib.js?v=1792089106"></script>
+<script src="/holidays.js?v=1792089106"></script>
+<script src="/celebrate.js?v=1792089106"></script>
+<script src="/terms.js?v=1792089106"></script>
+<script src="/main.js?v=1792089106"></script>
 </body>
 </html>
