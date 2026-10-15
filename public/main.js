@@ -339,44 +339,55 @@ document.addEventListener("click", async e => {
 });
 
 /* ---------- pay check ---------- */
-async function renderPay() {
-  const { data } = await sb.rpc("wage_stats"); S.wages = new Map((data || []).map(r => [r.role_key, r]));
+// Public pay is the starting point. Member reports (once 3+ people share a job) pull the numbers toward
+// what members actually make. Public data counts like PAY_K reports, so after PAY_K member reports it's half and half.
+const PAY_K = 10;
+function payStats(w) {
+  const s = S.wages.get(wLabel(w));
+  if (!s) return { lo: w.lo, med: w.med, hi: w.hi, n: 0, m: 0 };
+  const n = Number(s.n), m = n / (n + PAY_K), mix = (a, b) => (1 - m) * a + m * b;
+  return { lo: mix(w.lo, +s.lo), med: mix(w.med, +s.med), hi: mix(w.hi, +s.hi), n, m };
+}
+const paySrc = p => p.n ? `Public + ${p.n} report${p.n > 1 ? "s" : ""}` : "Public data";
+function payRowsHTML() {
   const cat = S.payCat || "All", q = (S.payQ || "").toLowerCase();
-  const rows = WAGES.map((w, i) => [w, i]).filter(([w]) => (cat === "All" || w.cat === cat) && (!q || wLabel(w).toLowerCase().includes(q)));
+  const rows = WAGES.filter(w => (cat === "All" || w.cat === cat) && (!q || wLabel(w).toLowerCase().includes(q)));
+  if (!rows.length) return `<tr><td colspan="5" class="fine">No jobs match that search.</td></tr>`;
+  return rows.map(w => { const p = payStats(w); return `<tr><td>${esc(wLabel(w))}<div class="fine">${esc(w.cat)}</div></td><td class="mono">$${p.lo.toFixed(2)}</td><td class="mono"><b>$${p.med.toFixed(2)}</b></td><td class="mono">$${p.hi.toFixed(2)}</td><td class="fine" title="${esc("Public figure: " + w.bls)}">${paySrc(p)}</td></tr>`; }).join("");
+}
+async function loadWages() { const { data } = await sb.rpc("wage_stats"); S.wages = new Map((data || []).map(r => [r.role_key, r])); }
+async function renderPay() {
+  await loadWages();
+  const cat = S.payCat || "All";
   $("#main").innerHTML = `<div class="col">
-   <div class="viewhead"><h1>Pay Check</h1><span class="muted" style="font-size:13px">Real pay, shared anonymously by members</span></div>
+   <div class="viewhead"><h1>Pay Check</h1><span class="muted" style="font-size:13px">Public pay data, adjusted by what members report</span></div>
    <div class="card composer">
     <div class="row"><select id="pRole" aria-label="Your job" style="flex:1;min-width:200px">${WAGE_CATS.map(c => `<optgroup label="${c}">${WAGES.map((w, i) => [w, i]).filter(([w]) => w.cat === c).map(([w, i]) => `<option value="${i}">${esc(wLabel(w))}</option>`).join("")}</optgroup>`).join("")}</select>
     <input type="text" id="pRate" inputmode="decimal" placeholder="Your hourly pay, like 16.40" style="flex:1;min-width:140px"><button class="btn primary" id="pGo">Share and compare</button></div>
-    <p class="fine" style="margin:0">Your pay is saved with no username attached. A range shows once 3 people in a job have shared during the beta.</p>
+    <p class="fine" style="margin:0">Your pay is saved with no username attached. Member reports start adjusting a job's numbers once 3 people in that job have shared.</p>
    </div>
    <div id="pOut"></div>
-   <div class="viewhead" style="margin-top:6px"><h2 style="font-size:22px">Reported pay by job</h2><input type="text" id="pSearch" placeholder="Search jobs, like welder" value="${esc(S.payQ || "")}" style="min-width:0;flex:0 1 220px"></div>
+   <div class="viewhead" style="margin-top:6px"><h2 style="font-size:22px">Pay by job</h2><input type="text" id="pSearch" placeholder="Search jobs, like welder" value="${esc(S.payQ || "")}" style="min-width:0;flex:0 1 220px"></div>
    <div class="chips">${["All", ...WAGE_CATS].map(c => `<button class="chip" data-pcat="${c}" aria-pressed="${cat === c}">${c}</button>`).join("")}</div>
-   <div class="card" style="overflow-x:auto"><table class="wt"><thead><tr><th>Job</th><th>Low</th><th>Median</th><th>High</th><th>Reports</th></tr></thead><tbody>
-   ${rows.map(([w]) => { const s = S.wages.get(wLabel(w)); return `<tr><td>${esc(wLabel(w))}<div class="fine">${esc(w.cat)}</div></td>${s ? `<td class="mono">$${(+s.lo).toFixed(2)}</td><td class="mono"><b>$${(+s.med).toFixed(2)}</b></td><td class="mono">$${(+s.hi).toFixed(2)}</td><td class="mono">${s.n}</td>` : `<td colspan="4" class="fine">Not enough reports yet</td>`}</tr>`; }).join("")}
-   </tbody></table></div>
-   <p class="fine">Low and high are the 10th and 90th percentile of what members shared.</p>
+   <div class="card" style="overflow-x:auto"><table class="wt"><thead><tr><th>Job</th><th>Low</th><th>Median</th><th>High</th><th>Based on</th></tr></thead><tbody id="pRows">${payRowsHTML()}</tbody></table></div>
+   <p class="fine">Hourly pay. Starting numbers are national figures from the ${PAY_SOURCE}. Company rows use the national figure for that type of job until members report. Low and high are the 10th and 90th percentile. As members share, their reports count more: at ${PAY_K} reports a job is half public data, half member reports, and the member side keeps growing from there.</p>
   </div>`;
-  document.querySelectorAll("[data-pcat]").forEach(b => b.onclick = () => { S.payCat = b.dataset.pcat; renderPay(); });
-  const ps = $("#pSearch"); ps.oninput = () => { S.payQ = ps.value; const pos = ps.selectionStart; renderPay().then(() => { const n = $("#pSearch"); n.focus(); n.setSelectionRange(pos, pos); }); };
+  document.querySelectorAll("[data-pcat]").forEach(b => b.onclick = () => { S.payCat = b.dataset.pcat; document.querySelectorAll("[data-pcat]").forEach(x => x.setAttribute("aria-pressed", x === b)); $("#pRows").innerHTML = payRowsHTML(); });
+  const ps = $("#pSearch"); ps.oninput = () => { S.payQ = ps.value; $("#pRows").innerHTML = payRowsHTML(); };
   $("#pGo").onclick = async () => {
     const w = WAGES[$("#pRole").value], key = wLabel(w), r = parseFloat($("#pRate").value.replace(/[$,]/g, ""));
     if (!(r > 5 && r < 300)) { $("#pOut").innerHTML = `<div class="warn">Enter your hourly pay as a number, like 16.40.</div>`; return; }
     const shared = store.get("wages:" + S.uid, []);
     if (!shared.includes(key)) { const { error } = await sb.from("wages").insert({ role_key: key, rate: r }); if (error) { toast(errMsg(error)); return; } shared.push(key); store.set("wages:" + S.uid, shared); }
-    const { data } = await sb.rpc("wage_stats"); S.wages = new Map((data || []).map(x => [x.role_key, x]));
-    const s = S.wages.get(key);
-    if (!s) { $("#pOut").innerHTML = `<div class="card result"><span class="eyebrow">${esc(key)}</span><h3 class="srq">Thanks, your pay was added</h3><p class="fine" style="margin:0">A range shows once at least 3 people in this job have shared. Invite a coworker to add theirs.</p></div>`; return; }
-    const lo = +s.lo, med = +s.med, hi = +s.hi, span = Math.max(.01, hi - lo), pos = Math.max(0, Math.min(100, (r - lo) / span * 100)), diff = r - med;
+    await loadWages();
+    const p = payStats(w), lo = p.lo, med = p.med, hi = p.hi, span = Math.max(.01, hi - lo), pos = Math.max(0, Math.min(100, (r - lo) / span * 100)), diff = r - med;
     const verdict = diff >= 0.25 ? ["ok", "You're above the median"] : diff <= -0.25 ? ["bad", "You're below the median"] : ["mid", "You're right at the median"];
-    $("#pOut").innerHTML = `<div class="card result"><span class="eyebrow">${esc(key)} · ${s.n} reports</span><h3 class="srq ${verdict[0]}">${verdict[1]}${Math.abs(diff) >= .25 ? ` by $${Math.abs(diff).toFixed(2)}/hr` : ""}</h3>
+    $("#pOut").innerHTML = `<div class="card result"><span class="eyebrow">${esc(key)} · ${paySrc(p)}</span><h3 class="srq ${verdict[0]}">${verdict[1]}${Math.abs(diff) >= .25 ? ` by $${Math.abs(diff).toFixed(2)}/hr` : ""}</h3>
      <div class="range"><i style="left:${pos}%"></i></div><div class="row mono" style="justify-content:space-between"><span>$${lo.toFixed(2)}</span><span>median $${med.toFixed(2)}</span><span>$${hi.toFixed(2)}</span></div>
-     <p class="fine" style="margin:0">That's about $${Math.abs(diff * 2080).toLocaleString(undefined, { maximumFractionDigits: 0 })} a year at full time.</p></div>`;
-    renderPayTableOnly();
+     <p class="fine" style="margin:0">That's about $${Math.abs(diff * 2080).toLocaleString(undefined, { maximumFractionDigits: 0 })} a year at full time.${p.n ? "" : " Thanks, your pay was added. Once 3 people in this job share, member reports start adjusting these numbers."}</p></div>`;
+    $("#pRows").innerHTML = payRowsHTML();
   };
 }
-function renderPayTableOnly() {}
 
 /* ---------- boards ---------- */
 function renderBoards() {
