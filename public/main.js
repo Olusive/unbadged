@@ -1040,6 +1040,7 @@ function renderSettings() {
     <div class="swatches">${ACCENTS.map(([n, c]) => `<button class="swatch" role="radio" aria-checked="${S.accent === c}" data-accent="${c}" title="${n}" style="background:${c}"><span>${n}</span></button>`).join("")}</div>
     ${holidayNow && !S.holidayPreview ? `<span class="fine">The ${esc(HOLI[holidayNow.key].name)} theme is using its own color right now. Yours comes back when the holiday ends.</span>` : ""}
     ${sw("sCheer", store.get("celebrateSound", true), "Post celebration sound", "When you post from Home, a little celebration plays to match the holiday. This turns its sound on or off.")}
+    <button class="btn small" id="sCheerTest" style="align-self:flex-start">🎉 Test celebration</button>
     ${sw("sHoliday", store.get("holidays", true), "Holiday themes", "The app dresses up for holidays: new colors, a festive background, and a banner. Federal holidays start 3 weeks early; others start 1 week early.")}
     ${owner() ? `<span class="setlabel">Preview a holiday (only you see this)</span><select id="sHoliPrev"><option value="">Off, follow the calendar</option>${Object.entries(HOLI).map(([k, t]) => `<option value="${k}" ${S.holidayPreview === k ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select>` : ""}</div>
    <div class="card setcard"><span class="eyebrow">Devices</span>
@@ -1091,6 +1092,7 @@ function renderSettings() {
   if ($("#qrBox")) drawQR($("#qrBox"), location.origin + "/#link=" + S.linkCode.replace("-", ""));
   $("#sProf").onchange = e => { S.prof = e.target.checked; store.set("prof", S.prof); };
   $("#sCheer").onchange = e => store.set("celebrateSound", e.target.checked);
+  $("#sCheerTest").onclick = e => celebrate(e.currentTarget);
   $("#sHoliday").onchange = e => { store.set("holidays", e.target.checked); S.holidayPreview = null; applyHoliday(); renderSettings(); };
   if ($("#sHoliPrev")) $("#sHoliPrev").onchange = e => { S.holidayPreview = e.target.value || null; applyHoliday(S.holidayPreview); renderSettings(); };
   document.querySelectorAll("[data-flist]").forEach(b => b.onclick = () => followListModal(b.dataset.flist));

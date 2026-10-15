@@ -71,6 +71,13 @@ const FX = {
     for (let i = 0; i <= hops * 2; i++) frames.push({ transform: `translate(${-15 + (130 * i) / (hops * 2)}vw,${i % 2 ? -(o.hop ?? 6) : 0}vh) scaleX(-1)` });
     s.animate(frames, { duration: o.dur || 4200, easing: "linear", fill: "both" });
   },
+  gentle(chars, x, y, n = 7) {
+    const L = fxLayer(2600);
+    for (let i = 0; i < n; i++) {
+      const s = glyph(L, chars[i % chars.length], rnd(26, 40), `left:${x + rnd(-110, 110)}px;top:${y + rnd(-120, 10)}px`);
+      s.animate([{ opacity: 0, transform: "translate(-50%,-50%) scale(.5)" }, { opacity: 1, transform: "translate(-50%,-50%) scale(1)", offset: 0.25 }, { opacity: 1, transform: "translate(-50%,-50%) scale(1)", offset: 0.7 }, { opacity: 0, transform: "translate(-50%,-50%) scale(1)" }], { duration: 2200, delay: i * 90, fill: "both" });
+    }
+  },
   fireworks(colors, bursts = 6) {
     const c = document.createElement("canvas"); c.className = "celebrate cfw"; document.body.appendChild(c);
     const fw = new Fireworks(c, colors, 1); for (let i = 0; i < bursts; i++) setTimeout(() => fw.launch(), i * 380 + rnd(0, 200));
@@ -126,15 +133,18 @@ const CELEBRATIONS = {
   columbus: () => { FX.fly(["🍂", "🍁"], 14, { size: [20, 34], dur: [1800, 2800], wobble: 10 }); return "whoosh"; },
   none: (x, y) => { FX.burst(["🎉", "✨", "🟧", "🟨", "🟦"], x, y, 36); return "pop"; },
 };
+const GENTLE = {halloween: ["🦇","🎃","👻"], christmas: ["🎄","🎁","❄️","🎅"], newyear: ["🎆","🥂","✨"], july4: ["🎆","🇺🇸","⭐"], thanksgiving: ["🦃","🍂","🥧"], veterans: ["🇺🇸","⭐","🎖️"], memorial: ["🇺🇸","🎖️"], mlk: ["🕊️"], presidents: ["🦅","⭐"], valentines: ["❤️","💖","💕"], stpatricks: ["🍀","🪙","🌈"], easter: ["🐇","🥚","🌷"], mothers: ["🌸","💐"], fathers: ["🛠️","🍔","👔"], juneteenth: ["⭐","✨","🎉"], labor: ["🛠️","⚙️","👷"], columbus: ["🍂","🍁"], none: ["🎉","✨"]};
 function celebrate(originEl) {
   try {
     const key = (typeof holidayNow !== "undefined" && holidayNow && holidayNow.key) || "none";
     const r = originEl ? originEl.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 2, width: 0, height: 0 };
     const quiet = matchMedia("(prefers-reduced-motion: reduce)").matches;
     let sound = "pop";
-    if (!quiet) sound = (CELEBRATIONS[key] || CELEBRATIONS.none)(r.left + r.width / 2, r.top + r.height / 2);
-    else { const s = (CELEBRATIONS[key] || CELEBRATIONS.none).toString().match(/return "(\w+)"/); sound = s ? s[1] : "pop"; }
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    if (!document.body.animate) return; // very old browser
+    if (!quiet) sound = (CELEBRATIONS[key] || CELEBRATIONS.none)(x, y);
+    else { FX.gentle(GENTLE[key] || GENTLE.none, Math.min(Math.max(x, 130), innerWidth - 130), Math.max(y, 180)); const s = (CELEBRATIONS[key] || CELEBRATIONS.none).toString().match(/return "(\w+)"/); sound = s ? s[1] : "pop"; }
     let soundOn = true; try { soundOn = JSON.parse(localStorage.getItem("ub-celebrateSound") ?? "true"); } catch (e) {}
     if (soundOn && sound) (typeof sound === "function" ? sound : SOUNDS[sound] || SOUNDS.pop)();
-  } catch (e) { /* a celebration should never break posting */ }
+  } catch (e) { console.warn("celebration skipped", e); /* a celebration should never break posting */ }
 }
