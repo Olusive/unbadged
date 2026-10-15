@@ -295,6 +295,37 @@ img[data-zoom]{cursor:zoom-in}
 .btag svg{width:10px;height:10px}
 .betacard{border-color:rgba(177,140,255,.45)}
 @media (prefers-reduced-motion:reduce){.bav,.btag{animation:none}}
+.stgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}
+.stcard{display:flex;align-items:center;border:1px solid var(--line);background:var(--surface);border-radius:8px;min-width:0}
+.stcard.on{border-color:var(--accent);background:var(--accent-soft)}
+.stplay{flex:1;display:flex;align-items:center;gap:10px;border:0;background:transparent;padding:10px;text-align:left;min-width:0;color:var(--ink);cursor:pointer}
+.stmeta{display:flex;flex-direction:column;min-width:0;gap:1px}
+.stmeta b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stmeta span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stmeta .ststate{color:var(--accent);font-weight:600;display:flex;align-items:center;gap:5px}
+.stmeta .ststate:empty{display:none}
+.stfav{border:0;background:transparent;font-size:20px;padding:10px 12px;color:var(--muted);cursor:pointer}
+.stfav[aria-pressed="true"]{color:#ffc83d}
+.sticon{position:relative;flex:none;width:46px;height:46px;border-radius:8px;overflow:hidden;background:linear-gradient(135deg,var(--accent),#7a3cff);display:flex;align-items:center;justify-content:center}
+.sticon b{color:#fff;font-size:15px;letter-spacing:.04em}
+.sticon img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#fff}
+.sticon.sm{width:38px;height:38px}
+.rplayer{position:fixed;left:0;right:0;z-index:45;display:flex;align-items:center;gap:10px;padding:8px max(12px,env(safe-area-inset-right,0px)) 8px max(12px,env(safe-area-inset-left,0px));background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -6px 20px rgba(0,0,0,.25)}
+.rplayer[hidden]{display:none}
+.rpinfo{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;border:0;background:transparent;padding:0;text-align:left;color:var(--ink);cursor:pointer}
+.rpinfo b{font-size:14px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rpinfo span{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}
+.rpbtn{width:42px;height:42px;border-radius:999px;border:0;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;flex:none;cursor:pointer}
+.rpbtn svg{width:20px;height:20px}
+.rpx{border:0;background:transparent;color:var(--muted);font-size:18px;padding:8px;cursor:pointer}
+body.hasplayer .toast{bottom:calc(90px + env(safe-area-inset-bottom,0px))}
+@media (max-width:720px){body.hasplayer .toast{bottom:calc(150px + env(safe-area-inset-bottom,0px))}}
+body.hasplayer main{padding-bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+.eq{display:inline-flex;align-items:flex-end;gap:2px;height:11px}
+.eq i{width:3px;background:var(--accent);animation:eq 1s ease-in-out infinite}
+.eq i:nth-child(2){animation-delay:-.4s}.eq i:nth-child(3){animation-delay:-.7s}
+@keyframes eq{0%,100%{height:3px}50%{height:11px}}
+@media (prefers-reduced-motion:reduce){.eq i{animation:none;height:8px}}
 .mobonly{display:none}
 .mobrail{display:none}
 @media (max-width:1060px){.mobrail{display:block;margin-bottom:14px}}
@@ -459,8 +490,8 @@ img[data-zoom]{cursor:zoom-in}
 <noscript><p style="padding:20px">Unbadged needs JavaScript turned on.</p></noscript>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/lib.js?v=1792083044"></script>
-<script src="/terms.js?v=1792083044"></script>
-<script src="/main.js?v=1792083044"></script>
+<script src="/lib.js?v=1792085328"></script>
+<script src="/terms.js?v=1792085328"></script>
+<script src="/main.js?v=1792085328"></script>
 </body>
 </html>

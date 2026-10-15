@@ -333,11 +333,12 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ---------- nav ---------- */
-const NAV = [["home", "Home", ICON.home], ["pay", "Pay Check", ICON.pay], ["boards", "Boards", ICON.boards], ["chats", "Chats", ICON.chat], ["dms", "Messages", ICON.dm]];
+const NAV = [["home", "Home", ICON.home], ["pay", "Pay Check", ICON.pay], ["boards", "Boards", ICON.boards], ["chats", "Chats", ICON.chat], ["dms", "Messages", ICON.dm], ["radio", "Radio", ICON.radio]];
+const SHORT = { pay: "Pay", dms: "DMs" };
 function renderNav() {
   const b = ([id, label, ic]) => { const c = id === "chats" ? unreadTotal("group") : id === "dms" ? unreadTotal("dm") : 0; return `<button class="navbtn" data-view="${id}" ${S.view === id ? 'aria-current="page"' : ""}>${ic}<span>${label}</span>${c ? `<span class="count" aria-label="${c} unread">${c > 99 ? "99+" : c}</span>` : ""}</button>`; };
   $("#navMain").innerHTML = (owner() ? [...NAV, ["owner", "Owner tools", ICON.plus]] : NAV).map(b).join("");
-  $("#tabs").innerHTML = (owner() ? [...NAV, ["owner", "Owner", ICON.plus]] : NAV).map(b).join("");
+  $("#tabs").innerHTML = (owner() ? [...NAV, ["owner", "Owner", ICON.plus]] : NAV).map(([id, l, ic]) => b([id, SHORT[id] || l, ic])).join("");
   $("#myBoards").innerHTML = [...S.joined].filter(x => !S.blocks.board.has(x)).map(x => `<button class="boardlink" data-board="${esc(x)}">${esc(x)}</button>`).join("");
   const me = P(S.uid);
   $("#meHandle").textContent = me.username; $("#meHandle").classList.toggle("oname", me.role === "owner");
@@ -1056,6 +1057,79 @@ async function renderOwner() {
   document.querySelectorAll("[data-ccl]").forEach(b => b.onclick = async () => { await sb.rpc("cancel_invite", { p_code: b.dataset.ccl }); renderOwner(); toast("Invite cancelled"); });
 }
 
+/* ---------- radio: stations play straight from each broadcaster; the "radio" server function only finds them ---------- */
+const GENRE_LIST = [["rock", "Rock"], ["country", "Country"], ["rap", "Rap"], ["metal", "Heavy Metal"], ["pop", "Pop"]];
+const R = { genre: store.get("radioGenre", "rock"), lists: new Map(), now: null, state: "idle", errors: new Set() };
+const radioAudio = new Audio(); radioAudio.preload = "none";
+const radioFavs = () => store.get("radioFavs", []);
+const isFav = id => radioFavs().some(f => f.id === id);
+function toggleFav(st) { const f = radioFavs(), i = f.findIndex(x => x.id === st.id); if (i >= 0) f.splice(i, 1); else f.unshift({ id: st.id, name: st.name, url: st.url, icon: st.icon, where: st.where, kbps: st.kbps }); store.set("radioFavs", f.slice(0, 30)); }
+async function loadStations(g) {
+  if (R.lists.has(g)) return R.lists.get(g);
+  const { data, error } = await sb.functions.invoke("radio", { body: { genre: g } });
+  if (error || !data || !data.stations) throw new Error((data && data.error) || "Couldn't load stations. Try again in a minute.");
+  R.lists.set(g, data.stations); return data.stations;
+}
+const initials = n => (String(n).replace(/[^A-Za-z ]/g, " ").trim().split(/\s+/).filter(w => w.length > 1 && !/^(the|fm|am|radio|of|and)$/i.test(w)).slice(0, 2).map(w => w[0]).join("") || "♪").toUpperCase();
+const stIcon = (st, cls = "") => `<span class="sticon ${cls}"><b>${esc(initials(st.name))}</b>${st.icon ? `<img src="${esc(st.icon)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}</span>`;
+function playStation(st) {
+  if (R.now && R.now.id === st.id && R.state !== "idle") { if (R.state === "playing" || R.state === "loading") { R.switching = false; radioAudio.pause(); R.state = "paused"; paintRadio(); } else resumeRadio(); return; }
+  R.now = st; R.state = "loading"; R.errors.delete(st.id); R.switching = true;
+  radioAudio.src = st.url; radioAudio.play().catch(() => {});
+  sb.functions.invoke("radio", { body: { click: st.id } }).catch(() => {});
+  if ("mediaSession" in navigator) {
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: st.name, artist: "Break Room Radio", album: "Unbadged", artwork: st.icon ? [{ src: st.icon, sizes: "512x512" }] : [{ src: "/icon-512.png", sizes: "512x512", type: "image/png" }] });
+      navigator.mediaSession.setActionHandler("play", resumeRadio);
+      navigator.mediaSession.setActionHandler("pause", () => { R.switching = false; radioAudio.pause(); });
+      navigator.mediaSession.setActionHandler("stop", stopRadio);
+    } catch (e) {}
+  }
+  paintRadio();
+}
+function resumeRadio() { if (!R.now) return; R.state = "loading"; R.switching = true; radioAudio.src = R.now.url; radioAudio.play().catch(() => {}); paintRadio(); } // reconnect so live radio isn't behind
+function stopRadio() { radioAudio.pause(); radioAudio.removeAttribute("src"); radioAudio.load(); R.now = null; R.state = "idle"; paintRadio(); }
+radioAudio.addEventListener("playing", () => { R.switching = false; R.state = "playing"; paintRadio(); });
+radioAudio.addEventListener("waiting", () => { if (R.now) { R.state = "loading"; paintRadio(); } });
+radioAudio.addEventListener("pause", () => { if (R.switching && radioAudio.readyState < 3) return; R.switching = false; if (R.now && R.state !== "idle") { R.state = "paused"; paintRadio(); } });
+radioAudio.addEventListener("error", () => { R.switching = false; if (!R.now || !radioAudio.getAttribute("src")) return; R.errors.add(R.now.id); toast(`${R.now.name} isn't working right now. Try another station.`); R.now = null; R.state = "idle"; paintRadio(); });
+const PLAY_I = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>', PAUSE_I = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
+const EQ = '<span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>';
+function paintRadio() {
+  let bar = $("#rplayer");
+  if (!bar) { bar = document.createElement("div"); bar.id = "rplayer"; bar.className = "rplayer"; document.body.appendChild(bar); }
+  document.body.classList.toggle("hasplayer", !!R.now);
+  if (!R.now) { bar.hidden = true; } else {
+    const st = R.now, live = R.state === "playing", tabs = $("#tabs");
+    bar.hidden = false; bar.style.bottom = (tabs && getComputedStyle(tabs).display !== "none" ? tabs.offsetHeight : 0) + "px";
+    bar.innerHTML = `${stIcon(st, "sm")}<button class="rpinfo" id="rpGo"><b>${esc(st.name)}</b><span>${live ? EQ + "LIVE" : R.state === "loading" ? "Tuning in…" : "Paused"} · Break Room Radio</span></button>
+     <button class="rpbtn" id="rpPlay" aria-label="${live || R.state === "loading" ? "Pause" : "Play"}">${live || R.state === "loading" ? PAUSE_I : PLAY_I}</button><button class="rpx" id="rpStop" aria-label="Stop radio">✕</button>`;
+    $("#rpPlay").onclick = () => playStation(st); $("#rpStop").onclick = stopRadio; $("#rpGo").onclick = () => go("radio");
+  }
+  document.querySelectorAll("[data-st]").forEach(el => { const on = R.now && R.now.id === el.dataset.st; el.classList.toggle("on", !!on); const s = el.querySelector(".ststate"); if (s) s.innerHTML = on ? (R.state === "playing" ? EQ + "Playing" : R.state === "loading" ? "Tuning in…" : "Paused") : R.errors.has(el.dataset.st) ? "Not working" : ""; });
+}
+async function renderRadio() {
+  const g = R.genre, favs = radioFavs();
+  $("#main").innerHTML = `<div class="col">
+   <div class="viewhead"><div><h1>Break Room Radio</h1><span class="muted" style="font-size:13px">Free live stations. Keeps playing while you use the rest of the app.</span></div></div>
+   <div class="chips">${favs.length ? `<button class="chip" data-genre="saved" aria-pressed="${g === "saved"}">★ Saved</button>` : ""}${GENRE_LIST.map(([k, l]) => `<button class="chip" data-genre="${k}" aria-pressed="${g === k}">${l}</button>`).join("")}</div>
+   <div id="stList"><div class="card" style="padding:20px"><span class="muted">Finding stations…</span></div></div>
+   <p class="fine">Stations stream straight from the broadcasters, found through the free <a href="https://www.radio-browser.info" target="_blank" rel="noopener">Radio Browser</a> directory. Unbadged doesn't run them or control what they play, and some may have ads or explicit lyrics. Streaming uses your data, so use Wi-Fi when you can.</p>
+  </div>`;
+  document.querySelectorAll("[data-genre]").forEach(b => b.onclick = () => { R.genre = b.dataset.genre; store.set("radioGenre", R.genre); renderRadio(); });
+  let list;
+  try { list = g === "saved" ? radioFavs() : await loadStations(g); }
+  catch (e) { if (S.view === "radio" && R.genre === g) $("#stList").innerHTML = `<div class="card" style="padding:20px"><b>Couldn't load stations</b><p class="muted" style="margin:6px 0 0">${esc(e.message)}</p><button class="btn small" id="stRetry" style="margin-top:10px">Try again</button></div>`; const r = $("#stRetry"); if (r) r.onclick = renderRadio; return; }
+  if (S.view !== "radio" || R.genre !== g) return;
+  $("#stList").innerHTML = list.length ? `<div class="stgrid">${list.map(st => `<div class="stcard" data-st="${st.id}"><button class="stplay" data-play="${st.id}" aria-label="Play ${esc(st.name)}">${stIcon(st)}<span class="stmeta"><b>${esc(st.name)}</b><span>${esc([st.where, st.kbps ? st.kbps + " kbps" : ""].filter(Boolean).join(" · "))}</span><span class="ststate"></span></span></button><button class="stfav" data-fav="${st.id}" aria-label="${isFav(st.id) ? "Remove from saved" : "Save station"}" aria-pressed="${isFav(st.id)}">${isFav(st.id) ? "★" : "☆"}</button></div>`).join("")}</div>`
+    : `<div class="card" style="padding:20px"><span class="muted">${g === "saved" ? "Tap ☆ on any station to save it here." : "No stations found right now. Try another genre."}</span></div>`;
+  const byId = id => list.find(x => x.id === id);
+  document.querySelectorAll("[data-play]").forEach(b => b.onclick = () => playStation(byId(b.dataset.play)));
+  document.querySelectorAll("[data-fav]").forEach(b => b.onclick = () => { const st = byId(b.dataset.fav); toggleFav(st); if (R.genre === "saved" && !radioFavs().length) R.genre = "rock"; renderRadio(); toast(isFav(st.id) ? "Saved " + st.name : "Removed from saved"); });
+  paintRadio();
+}
+window.addEventListener("resize", () => { if (R.now) paintRadio(); });
+
 /* ---------- right rail ---------- */
 function breakHTML() {
   return `<div class="card brk"><span class="eyebrow">On break?</span><div class="clock mono clk">${S.brkEnd ? "" : "15:00"}</div>
@@ -1219,7 +1293,7 @@ function startLive() {
 /* ---------- render & boot ---------- */
 async function render() {
   renderNav();
-  const views = { home: renderHome, pay: renderPay, boards: renderBoards, chats: renderChats, dms: renderDMs, settings: renderSettings, owner: renderOwner, terms: renderTerms, profile: renderProfile };
+  const views = { home: renderHome, pay: renderPay, boards: renderBoards, chats: renderChats, dms: renderDMs, settings: renderSettings, owner: renderOwner, terms: renderTerms, profile: renderProfile, radio: renderRadio };
   try { await (views[S.view] || renderHome)(); } catch (e) { console.error(e); toast("Couldn't load that. Check your connection and try again."); }
   drawRail();
 }
