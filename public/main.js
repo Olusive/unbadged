@@ -257,8 +257,7 @@ async function joinBoard(id, on) {
   const { error } = on ? await sb.from("board_members").insert({ board: id }) : await sb.from("board_members").delete().eq("board", id).eq("user_id", S.uid);
   if (error && !/duplicate/.test(error.message)) { toast(errMsg(error)); return false; }
   on ? S.joined.add(id) : S.joined.delete(id);
-  const chat = S.rooms.find(r => r.kind === "public" && r.board === id);
-  if (!on && chat) { S.members.set(chat.id, (S.members.get(chat.id) || []).filter(m => !isMe(m.user_id))); S.unread.delete(chat.id); paintUnread(); }
+  if (!on) { S.rooms.filter(r => r.kind === "public" && r.board === id).forEach(c => { S.members.set(c.id, (S.members.get(c.id) || []).filter(m => !isMe(m.user_id))); S.unread.delete(c.id); }); paintUnread(); }
   return true;
 }
 async function enrichPosts(list) {
@@ -533,10 +532,10 @@ document.addEventListener("click", async e => {
   const j = e.target.closest("[data-join]");
   if (j) {
     const id = j.dataset.join, on = !S.joined.has(id); if (S.rooms.length === 0) await loadRooms();
-    const chat = S.rooms.find(r => r.kind === "public" && r.board === id), inChat = chat && myMember(chat);
+    const inChat = S.rooms.some(r => r.kind === "public" && r.board === id && myMember(r));
     if (!await joinBoard(id, on)) return;
-    renderNav(); renderBoards();
-    toast(on ? (chat ? `Joined ${id}. Its chat, ${chat.name}, is open to you now in Chats.` : `Joined ${id}`) : inChat ? `Left ${id} and its chat` : `Left ${id}`); return;
+    await loadRooms(); renderNav(); renderBoards();
+    toast(on ? `Joined ${id}. Its chats are in Chats now.` : inChat ? `Left ${id} and its chats` : `Left ${id}`); return;
   }
   const ol = e.target.closest("[data-olock]");
   if (ol) { const { error } = await sb.rpc("lock_board", { b: ol.dataset.olock, do_lock: ol.dataset.lock === "true" }); if (error) { toast(errMsg(error)); return; } await loadBoards(); renderBoards(); return; }
@@ -570,12 +569,14 @@ function wireSend(id, roomId, redraw, pctx) {
   const box = document.querySelector(".msgs"); if (box) box.scrollTop = box.scrollHeight;
 }
 async function loadRooms() {
-  const { data } = await sb.from("rooms").select("*").in("kind", ["public", "group"]).order("created_at");
-  S.rooms = (data || []).filter(r => !S.blocks.room.has(r.id));
-  const { data: mem } = await sb.from("room_members").select("room_id,user_id,role,muted,silenced");
+  const [{ data }, { data: mem }] = await Promise.all([
+    sb.from("rooms").select("*").in("kind", ["public", "group"]).order("created_at"),
+    sb.from("room_members").select("room_id,user_id,role,muted,silenced"),
+  ]);
   S.members = new Map(); (mem || []).forEach(m => { if (!S.members.has(m.room_id)) S.members.set(m.room_id, []); S.members.get(m.room_id).push(m); });
-  const rank = r => r.kind === "group" ? 0 : inRoom(r) ? 1 : S.joined.has(r.board) ? 2 : 3;
-  S.rooms.sort((a, b) => rank(a) - rank(b));
+  S.rooms = (data || []).filter(r => !S.blocks.room.has(r.id) && (r.kind === "group" || !r.board || S.joined.has(r.board) || inRoom(r)));
+  const rank = r => r.kind === "group" ? 0 : inRoom(r) ? 1 : 2, bord = r => S.boards.findIndex(b => b.id === r.board);
+  S.rooms.sort((a, b) => rank(a) - rank(b) || bord(a) - bord(b));
 }
 const myMember = r => (S.members.get(r.id) || []).find(m => isMe(m.user_id));
 const myRole = r => r.kind === "group" ? (myMember(r) || {}).role : null;
@@ -587,20 +588,26 @@ const inRoom = r => !!myMember(r);
 const roomSub = r => r.kind === "public" ? `${r.board ? r.board + " · " : ""}${inRoom(r) ? `board chat · ${(S.members.get(r.id) || []).length} in it${(myMember(r) || {}).muted ? " · notifications off" : ""}` : S.joined.has(r.board) ? "board chat · tap to join" : "join the board to chat"}` : r.kind === "group" ? `Private group · ${(S.members.get(r.id) || []).length} members${(myMember(r) || {}).muted ? " · notifications off" : ""}` : (r.board ? r.board + " · public room" : "Public room");
 async function renderChats() {
   await loadRooms();
-  if (!S.room || !S.rooms.find(r => r.id === S.room)) S.room = (S.rooms[0] || {}).id;
-  const r = S.rooms.find(x => x.id === S.room);
-  if (!r) { $("#main").innerHTML = `<div class="col"><h1>Group chats</h1><p class="muted">No rooms yet.</p></div>`; return; }
+  const chatBoards = S.boards.filter(b => S.rooms.some(r => r.kind === "public" && r.board === b.id)).map(b => b.id);
+  if (S.chatBoard && S.chatBoard !== "All" && !chatBoards.includes(S.chatBoard)) S.chatBoard = "All";
+  const fb = S.chatBoard || "All";
+  // private groups always show; board chats follow the filter
+  const shown = S.rooms.filter(x => x.kind === "group" || fb === "All" || x.board === fb);
+  if (!S.room || !shown.find(r => r.id === S.room)) S.room = (shown[0] || {}).id;
+  const r = shown.find(x => x.id === S.room);
+  const filterRow = chatBoards.length ? `<div class="chips">${["All", ...chatBoards].map(c => `<button class="chip" data-cboard="${esc(c)}" aria-pressed="${fb === c}">${c === "All" ? "All boards" : esc(c)}</button>`).join("")}</div>` : "";
+  if (!r) { $("#main").innerHTML = `<div class="col"><div class="viewhead"><h1>Group chats</h1><button class="btn small primary" id="newGroup">+ New group chat</button></div>${filterRow}<div class="card" style="padding:20px"><b>No chats yet</b><p class="muted" style="margin:6px 0 0">Every board has its own chats. Join a board and its chats show up here.</p><button class="btn small primary" data-view="boards" style="margin-top:10px">Browse boards</button></div></div>`; $("#newGroup").onclick = newGroupModal; wireChatFilter(); return; }
   const locked = r.kind === "public" && !inRoom(r);
   if (!S.roomSettings && !locked) { await loadMessages(r.id); if (S.unread.get(r.id)?.n) markRead(r.id); }
   else if (isAdmin(r)) { const { data } = await sb.from("room_bans").select("user_id").eq("room_id", r.id); S.roomBans = (data || []).map(x => x.user_id); if (S.roomBans.some(id => !S.profiles.has(id))) await loadProfiles(); }
   const silenced = (myMember(r) || {}).silenced;
   $("#main").innerHTML = `<div class="chatview"><div class="viewhead"><h1>Group chats</h1><button class="btn small primary" id="newGroup">+ New group chat</button></div>
-   <div class="card chatwrap"><div class="rooms">${S.rooms.map(x => `<button class="room ${x.kind === "public" && !inRoom(x) ? "lockedroom" : ""}" data-room="${x.id}" aria-current="${x.id === S.room}"><b>${x.kind === "group" ? "🔒 " : ""}${esc(x.name)}${ubadge(x.id, (S.unread.get(x.id) || {}).n || 0)}</b><small>${esc(roomSub(x))}</small></button>`).join("")}</div>
+   ${filterRow}<div class="card chatwrap"><div class="rooms">${shown.map((x, i) => (x.kind === "public" && (i === 0 || shown[i - 1].kind === "group") && shown.some(g => g.kind === "group") ? '<div class="roomsep">Board chats</div>' : x.kind === "group" && i === 0 ? '<div class="roomsep">Your private groups</div>' : "") + `<button class="room ${x.kind === "public" && !inRoom(x) ? "lockedroom" : ""}" data-room="${x.id}" aria-current="${x.id === S.room}"><b>${x.kind === "group" ? "🔒 " : ""}${esc(x.name)}${ubadge(x.id, (S.unread.get(x.id) || {}).n || 0)}</b><small>${esc(roomSub(x))}</small></button>`).join("")}</div>
    <div class="thread"><div class="threadhead"><div><h2>${esc(r.name)}</h2><span class="muted mono">${esc(roomSub(r))}</span></div>
     <button class="btn small" id="roomGear">${COG.replace("<svg", '<svg width="16" height="16" style="vertical-align:-3px"')} ${S.roomSettings ? "Back to chat" : "Settings"}</button></div>
    ${S.roomSettings ? roomSettingsHTML(r) : locked ? `<div class="lockpane"><b>${S.joined.has(r.board) ? "Join this chat" : `Members of ${esc(r.board)} only`}</b><span>${S.joined.has(r.board) ? "You're in " + esc(r.board) + ", so you can join its chat. Leave the board any time and you'll leave the chat too." : "This chat belongs to " + esc(r.board) + ". Join the board to chat here. If you leave the board later, you'll leave the chat too."}</span><button class="btn primary" id="rJoin">${S.joined.has(r.board) ? "Join chat" : "Join " + esc(r.board) + " and this chat"}</button></div>` : `<div class="msgs">${(S.msgs.get(r.id) || []).map(msgHTML).join("") || '<div class="sysmsg">No messages in the last few days. Say something.</div>'}</div>${silenced ? '<div class="sendbar"><span class="fine">An admin muted you in this group. You can read messages but can’t send them.</span></div>' : sendBar("room")}`}
    </div></div></div>`;
-  $("#newGroup").onclick = newGroupModal;
+  $("#newGroup").onclick = newGroupModal; wireChatFilter();
   $("#roomGear").onclick = () => { S.roomSettings = !S.roomSettings; renderChats(); };
   const cur = document.querySelector('.room[aria-current="true"]'); if (cur) cur.scrollIntoView({ block: "nearest", inline: "nearest" });
   if (S.roomSettings) return wireRoomSettings(r);
@@ -608,6 +615,7 @@ async function renderChats() {
   const pctx = r.kind === "group" && r.allow_faces ? { blur: false, note: "This group allows faces. Only its members can see photos." } : { blur: true, note: r.kind === "group" ? "Faces are blurred in this group. An admin can allow faces in settings." : "Public room. Faces are always blurred." };
   if (!silenced) wireSend("room", r.id, renderChats, pctx); else { const box = document.querySelector(".msgs"); if (box) box.scrollTop = box.scrollHeight; }
 }
+function wireChatFilter() { document.querySelectorAll("[data-cboard]").forEach(b => b.onclick = () => { S.chatBoard = b.dataset.cboard; S.room = null; S.roomSettings = false; renderChats(); }); }
 document.addEventListener("click", e => { const r = e.target.closest("[data-room]"); if (r) { S.room = r.dataset.room; S.roomSettings = false; renderChats(); } });
 
 function roomSettingsHTML(r) {
