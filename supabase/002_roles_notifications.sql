@@ -185,3 +185,8 @@ grant execute on function public.transfer_owner(uuid,uuid), public.set_silenced(
   public.unban_member(uuid,uuid), public.my_unread(), public.is_room_owner(uuid), public.is_silenced(uuid) to authenticated;
 revoke execute on function private.can_manage(uuid,uuid) from anon, public;
 grant execute on function private.can_manage(uuid,uuid) to authenticated;
+
+-- (applied separately) profile photos
+-- alter table public.profiles add column if not exists avatar_path text;
+-- alter table public.profiles add constraint avatar_path_own check (avatar_path is null or (avatar_path like id::text || '/avatar-%' and char_length(avatar_path) < 120));
+-- grant update (avatar_path) on public.profiles to authenticated;

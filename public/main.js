@@ -25,7 +25,9 @@ const isMe = id => id === S.uid;
 const owner = () => P(S.uid).role === "owner";
 const OT = id => P(id).role === "owner" ? FTAG() : "";
 function AV(id, size = "") {
-  const p = P(id); if (p.role === "owner") return OWNER_AV(size);
+  const p = P(id), pic = p.avatar_path && S.urls.get(p.avatar_path);
+  if (pic) { const im = `<img src="${pic}" alt="" ${size === "lg" ? `data-zoom alt="${esc(p.username)}'s profile photo"` : ""}>`; return p.role === "owner" ? `<span class="av ${size} oav avimg" aria-label="Founder"><span class="oav-in">${im}</span></span>` : `<span class="av ${size} avimg" aria-hidden="${size === "lg" ? "false" : "true"}">${im}</span>`; }
+  if (p.role === "owner") return OWNER_AV(size);
   const i = Math.max(0, Math.min(9, p.avatar || 0));
   return `<span class="av ${size}" style="background:${AV_COL[i]}" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${AV_GLY[i][1]}"/></svg></span>`;
 }
@@ -224,8 +226,10 @@ function processPhoto(file, pctx, done) {
 
 /* ---------- loading data ---------- */
 async function loadProfiles() {
-  const { data } = await sb.from("profiles").select("id,username,avatar,role,banned,company");
+  const { data } = await sb.from("profiles").select("id,username,avatar,avatar_path,role,banned,company");
   S.profiles = new Map((data || []).map(p => [p.id, p]));
+  const need = [...S.profiles.values()].map(p => p.avatar_path).filter(x => x && !S.urls.has(x));
+  if (need.length) { const { data: sg } = await sb.storage.from("photos").createSignedUrls(need, 86400); (sg || []).forEach(d => { if (d.signedUrl) S.urls.set(d.path, d.signedUrl); }); }
 }
 async function loadSocial() {
   const [f, b] = await Promise.all([
@@ -769,6 +773,49 @@ function feedbackModal(preset) {
   };
 }
 
+/* ---------- profile photo: pick, blur faces, crop to a circle, upload ---------- */
+function cropModal(dataUrl, done) {
+  const close = modal(`<div class="pmhead"><h2>Profile photo</h2><button class="btn small" id="pmX">Cancel</button></div>
+   <p class="fine" style="margin:0">Drag to move. Use the slider to zoom.</p>
+   <div class="cropbox"><canvas id="cropC" width="560" height="560" aria-label="Drag to position your photo"></canvas></div>
+   <label class="row" style="gap:10px;font-size:13px">Zoom<input type="range" id="cropZ" min="1" max="4" step="0.01" value="1" style="flex:1"></label>
+   <div class="row" style="justify-content:flex-end"><button class="btn primary" id="cropOk">Use this photo</button></div>`);
+  const im = new Image();
+  im.onload = () => {
+    const cv = $("#cropC"), g = cv.getContext("2d"), N = cv.width, base = N / Math.min(im.width, im.height);
+    let z = 1, ox = 0, oy = 0, drag = null;
+    const fit = () => { const sc = base * z, w = im.width * sc, h = im.height * sc; ox = Math.min(0, Math.max(N - w, ox)); oy = Math.min(0, Math.max(N - h, oy)); };
+    const draw = () => { fit(); const sc = base * z; g.fillStyle = "#000"; g.fillRect(0, 0, N, N); g.drawImage(im, ox, oy, im.width * sc, im.height * sc); };
+    ox = (N - im.width * base) / 2; oy = (N - im.height * base) / 2; draw();
+    cv.onpointerdown = e => { cv.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY }; };
+    cv.onpointermove = e => { if (!drag) return; const k = N / cv.getBoundingClientRect().width; ox += (e.clientX - drag.x) * k; oy += (e.clientY - drag.y) * k; drag = { x: e.clientX, y: e.clientY }; draw(); };
+    cv.onpointerup = cv.onpointercancel = () => { drag = null; };
+    $("#cropZ").oninput = e => { const nz = +e.target.value, c = N / 2; ox = c - (c - ox) * nz / z; oy = c - (c - oy) * nz / z; z = nz; draw(); };
+    $("#cropOk").onclick = () => { const out = document.createElement("canvas"); out.width = out.height = 400; out.getContext("2d").drawImage(cv, 0, 0, 400, 400); const url = out.toDataURL("image/jpeg", .88); close(); done(url); };
+  };
+  im.src = dataUrl;
+}
+function pickProfilePhoto() {
+  const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*";
+  inp.onchange = () => { const f = inp.files[0]; if (!f) return;
+    processPhoto(f, { blur: true, note: "Your profile photo is seen by everyone, so faces are blurred to keep you anonymous." }, url => cropModal(url, async out => {
+      try {
+        const blob = await (await fetch(out)).blob(), me = P(S.uid), old = me.avatar_path, path = `${S.uid}/avatar-${crypto.randomUUID()}.jpg`;
+        const { error } = await sb.storage.from("photos").upload(path, blob, { contentType: "image/jpeg" }); if (error) throw error;
+        const { error: e2 } = await sb.from("profiles").update({ avatar_path: path }).eq("id", S.uid); if (e2) throw e2;
+        S.urls.set(path, out); me.avatar_path = path; if (old) sb.storage.from("photos").remove([old]);
+        renderNav(); renderSettings(); toast("Profile photo updated");
+      } catch (er) { toast(errMsg(er)); }
+    }));
+  };
+  inp.click();
+}
+async function removeProfilePhoto() {
+  const me = P(S.uid), old = me.avatar_path; if (!old) return;
+  const { error } = await sb.from("profiles").update({ avatar_path: null }).eq("id", S.uid); if (error) { toast(errMsg(error)); return; }
+  me.avatar_path = null; sb.storage.from("photos").remove([old]); renderNav(); renderSettings(); toast("Profile photo removed");
+}
+
 /* ---------- settings ---------- */
 function avatarPicker(cur) { return `<div class="avgrid" role="radiogroup" aria-label="Avatar">${AV_GLY.map((g, i) => `<button class="avpick" role="radio" aria-checked="${cur === i}" data-av="${i}" title="${g[0]}" style="background:${AV_COL[i]}"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${g[1]}"/></svg></button>`).join("")}</div>`; }
 function renderSettings() {
@@ -782,7 +829,10 @@ function renderSettings() {
    <div class="card setcard"><span class="eyebrow">Account</span>
     <div class="row" style="gap:12px"><span id="setAv">${AV(S.uid, "lg")}</span><div><b class="mono ${me.role === "owner" ? "oname" : ""}" style="font-size:17px">${esc(me.username)}</b>${OT(S.uid)}<div class="fine">18+ confirmed · ${me.role === "owner" ? "Owner" : "Beta tester"}${me.company ? " · " + esc(me.company) : ""}</div></div></div>
     <div class="row followrow"><button class="followstat" data-flist="followers"><b class="mono">${S.follows.in.size}</b><span>Followers</span></button><button class="followstat" data-flist="following"><b class="mono">${S.follows.out.size}</b><span>Following</span></button></div>
-    ${me.role === "owner" ? '<div class="ownerbox"><b>Founder look locked in.</b> The gold crown avatar and FOUNDER tag are reserved for your account.</div><button class="btn small primary" data-view="owner" style="align-self:flex-start">Open Owner tools</button>' : `<span class="setlabel">Avatar</span>${avatarPicker(me.avatar)}`}
+    <span class="setlabel">Profile photo</span>
+    <div class="row"><button class="btn small primary" id="sPhoto">${me.avatar_path ? "Change photo" : "Upload a photo"}</button>${me.avatar_path ? '<button class="btn small" id="sPhotoX">Remove photo</button>' : ""}</div>
+    <span class="fine" style="margin-top:-4px">Any photo you want. Everyone can see it, so faces get blurred. ${me.role === "owner" ? "It shows inside your gold founder ring." : "Remove it to go back to an icon."}</span>
+    ${me.role === "owner" ? '<div class="ownerbox"><b>Founder look locked in.</b> The gold founder ring and FOUNDER tag are reserved for your account.</div><button class="btn small primary" data-view="owner" style="align-self:flex-start">Open Owner tools</button>' : `<span class="setlabel">${me.avatar_path ? "Icon (shows if you remove your photo)" : "Or pick an icon"}</span>${avatarPicker(me.avatar)}`}
     <span class="setlabel">Username</span>
     <div class="row"><input type="text" id="sName" value="${esc(me.username)}" maxlength="20" style="flex:1;min-width:0;font-family:var(--f-mono)"><button class="btn small primary" id="sSave">Save</button></div>
     <div class="warn" id="sW" hidden></div>
@@ -842,6 +892,7 @@ function renderSettings() {
   if ($("#qrBox")) drawQR($("#qrBox"), location.origin + "/#link=" + S.linkCode.replace("-", ""));
   $("#sProf").onchange = e => { S.prof = e.target.checked; store.set("prof", S.prof); };
   document.querySelectorAll("[data-flist]").forEach(b => b.onclick = () => followListModal(b.dataset.flist));
+  $("#sPhoto").onclick = pickProfilePhoto; if ($("#sPhotoX")) $("#sPhotoX").onclick = removeProfilePhoto;
   const sn = $("#sNotif"); if (sn) sn.onchange = async e => {
     const w = $("#sNotifW"); w.hidden = true;
     if (!e.target.checked) { S.notify = false; store.set("notify", false); return; }
