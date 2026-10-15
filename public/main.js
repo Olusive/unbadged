@@ -210,7 +210,7 @@ const NAV = [["home", "Home", ICON.home], ["pay", "Pay Check", ICON.pay], ["boar
 function renderNav() {
   const b = ([id, label, ic]) => `<button class="navbtn" data-view="${id}" ${S.view === id ? 'aria-current="page"' : ""}>${ic}<span>${label}</span></button>`;
   $("#navMain").innerHTML = (owner() ? [...NAV, ["owner", "Owner tools", ICON.plus]] : NAV).map(b).join("");
-  $("#tabs").innerHTML = NAV.map(b).join("");
+  $("#tabs").innerHTML = (owner() ? [...NAV, ["owner", "Owner", ICON.plus]] : NAV).map(b).join("");
   $("#myBoards").innerHTML = [...S.joined].filter(x => !S.blocks.board.has(x)).map(x => `<button class="boardlink" data-board="${esc(x)}">${esc(x)}</button>`).join("");
   const me = P(S.uid);
   $("#meHandle").textContent = me.username; $("#meHandle").classList.toggle("oname", me.role === "owner");
@@ -619,7 +619,7 @@ function renderSettings() {
    <div class="viewhead"><h1>Settings</h1></div>
    <div class="card setcard"><span class="eyebrow">Account</span>
     <div class="row" style="gap:12px"><span id="setAv">${AV(S.uid, "lg")}</span><div><b class="mono ${me.role === "owner" ? "oname" : ""}" style="font-size:17px">${esc(me.username)}</b>${OT(S.uid)}<div class="fine">18+ confirmed · ${me.role === "owner" ? "Owner" : "Beta tester"}${me.company ? " · " + esc(me.company) : ""}</div></div></div>
-    ${me.role === "owner" ? '<div class="ownerbox"><b>Founder look locked in.</b> The gold crown avatar and FOUNDER tag are reserved for your account.</div>' : `<span class="setlabel">Avatar</span>${avatarPicker(me.avatar)}`}
+    ${me.role === "owner" ? '<div class="ownerbox"><b>Founder look locked in.</b> The gold crown avatar and FOUNDER tag are reserved for your account.</div><button class="btn small primary" data-view="owner" style="align-self:flex-start">Open Owner tools</button>' : `<span class="setlabel">Avatar</span>${avatarPicker(me.avatar)}`}
     <span class="setlabel">Username</span>
     <div class="row"><input type="text" id="sName" value="${esc(me.username)}" maxlength="20" style="flex:1;min-width:0;font-family:var(--f-mono)"><button class="btn small primary" id="sSave">Save</button></div>
     <div class="warn" id="sW" hidden></div>
