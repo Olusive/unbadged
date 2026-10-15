@@ -89,7 +89,7 @@ async function getFaceDetector() {
     const files = await vision.FilesetResolver.forVisionTasks(V + "/wasm");
     faceDet = await vision.FaceDetector.createFromOptions(files, {
       baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite" },
-      runningMode: "IMAGE", minDetectionConfidence: 0.35,
+      runningMode: "IMAGE", minDetectionConfidence: 0.5,
     });
   } catch (e) { faceDet = false; }
   return faceDet;
@@ -97,14 +97,32 @@ async function getFaceDetector() {
 async function findFaces(cv) {
   const fd = await getFaceDetector(); if (!fd) return null;
   const out = [];
-  const add = (dets, ox, oy, s) => dets.forEach(d => { const b = d.boundingBox; out.push({ x: ox + b.originX / s, y: oy + b.originY / s, w: b.width / s, h: b.height / s }); });
+  // only keep detections that look like a real face: confident, roughly square, eyes above nose above mouth
+  const looksLikeFace = (d, iw, ih, minScore) => {
+    const sc = d.categories && d.categories[0] ? d.categories[0].score : 0;
+    if (sc < minScore) return false;
+    const b = d.boundingBox, ar = b.width / b.height;
+    if (ar < 0.55 || ar > 1.6) return false;
+    const k = d.keypoints;
+    if (!k || k.length < 4) return true;
+    const px = i => ({ x: k[i].x * iw, y: k[i].y * ih });
+    const re = px(0), le = px(1), nose = px(2), mouth = px(3), eyeY = (re.y + le.y) / 2, eyeD = Math.abs(re.x - le.x);
+    if (eyeD < b.width * 0.2 || eyeD > b.width * 0.8) return false;
+    if (Math.abs(re.y - le.y) > eyeD * 0.6) return false;
+    if (!(mouth.y > eyeY + eyeD * 0.3)) return false;
+    if (nose.y < eyeY - eyeD * 0.15 || nose.y > mouth.y + eyeD * 0.15) return false;
+    const mx = (re.x + le.x) / 2;
+    if (Math.abs(nose.x - mx) > eyeD * 0.7 || Math.abs(mouth.x - mx) > eyeD * 0.7) return false;
+    return true;
+  };
+  const add = (dets, ox, oy, iw, ih, minScore) => dets.filter(d => looksLikeFace(d, iw, ih, minScore)).forEach(d => { const b = d.boundingBox; out.push({ x: ox + b.originX, y: oy + b.originY, w: b.width, h: b.height }); });
   try {
-    add(fd.detect(cv).detections, 0, 0, 1);
+    add(fd.detect(cv).detections, 0, 0, cv.width, cv.height, 0.6);
     // also scan four overlapping tiles so small faces in group photos get caught
     const W = cv.width, H = cv.height, tw = Math.round(W * 0.6), th = Math.round(H * 0.6);
     for (const [ox, oy] of [[0, 0], [W - tw, 0], [0, H - th], [W - tw, H - th]]) {
       const t = document.createElement("canvas"); t.width = tw; t.height = th; t.getContext("2d").drawImage(cv, ox, oy, tw, th, 0, 0, tw, th);
-      add(fd.detect(t).detections, ox, oy, 1);
+      add(fd.detect(t).detections, ox, oy, tw, th, 0.72);
     }
   } catch (e) { return out.length ? out : null; }
   // merge boxes that overlap a lot
