@@ -78,7 +78,57 @@ async function uploadPhoto(dataUrl) {
   S.urls.set(path, dataUrl);
   return path;
 }
-const img = (path, alt) => path ? `<img src="${S.urls.get(path) || ""}" alt="${esc(alt)}" loading="lazy">` : "";
+const img = (path, alt) => path ? `<img src="${S.urls.get(path) || ""}" alt="${esc(alt)}" loading="lazy" data-zoom tabindex="0" role="button" aria-label="${esc(alt)}. Tap to view full screen.">` : "";
+
+/* ---------- full-screen photo viewer: tap to open, pinch or double-tap to zoom, drag to pan, swipe down or tap to close ---------- */
+function openViewer(src, alt) {
+  const ov = document.createElement("div");
+  ov.className = "viewer"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", "Photo viewer");
+  ov.innerHTML = `<button class="vclose" aria-label="Close photo">✕</button><img src="${src}" alt="${esc(alt || "Photo")}" draggable="false">`;
+  document.body.appendChild(ov); document.body.style.overflow = "hidden";
+  const im = ov.querySelector("img"), pts = new Map();
+  let sc = 1, tx = 0, ty = 0, startDist = 0, startSc = 1, last = null, moved = false, lastTap = 0, downY = 0;
+  const apply = (anim) => { im.style.transition = anim ? "transform .2s ease" : "none"; im.style.transform = `translate(${tx}px,${ty}px) scale(${sc})`; ov.style.background = `rgba(0,0,0,${sc === 1 ? Math.max(.35, .94 - Math.abs(ty) / 500) : .94})`; };
+  const clamp = () => { if (sc <= 1) { sc = 1; tx = 0; ty = 0; return; } const r = im.getBoundingClientRect(), bw = im.offsetWidth * sc, bh = im.offsetHeight * sc, mx = Math.max(0, (bw - innerWidth) / 2), my = Math.max(0, (bh - innerHeight) / 2); tx = Math.max(-mx, Math.min(mx, tx)); ty = Math.max(-my, Math.min(my, ty)); };
+  const close = () => { ov.remove(); document.body.style.overflow = ""; document.removeEventListener("keydown", key); };
+  const key = e => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", key);
+  ov.querySelector(".vclose").onclick = e => { e.stopPropagation(); close(); };
+  const zoomAt = (x, y, to) => { const cx = x - innerWidth / 2, cy = y - innerHeight / 2, k = to / sc; tx = cx - (cx - tx) * k; ty = cy - (cy - ty) * k; sc = to; clamp(); apply(true); };
+  ov.addEventListener("pointerdown", e => {
+    if (e.target.closest(".vclose")) return;
+    ov.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); moved = false; downY = e.clientY;
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; startDist = Math.hypot(a.x - b.x, a.y - b.y); startSc = sc; }
+    last = { x: e.clientX, y: e.clientY };
+  });
+  ov.addEventListener("pointermove", e => {
+    if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); sc = Math.max(1, Math.min(5, startSc * d / startDist)); moved = true; apply(false); return; }
+    const dx = e.clientX - last.x, dy = e.clientY - last.y; last = { x: e.clientX, y: e.clientY };
+    if (Math.abs(e.clientY - downY) > 6 || Math.abs(dx) > 6) moved = true;
+    if (sc > 1) { tx += dx; ty += dy; clamp(); } else ty += dy; // at normal size, dragging moves the photo to swipe-close
+    apply(false);
+  });
+  const up = e => {
+    if (!pts.has(e.pointerId)) return; pts.delete(e.pointerId);
+    if (pts.size) { last = [...pts.values()][0]; return; }
+    if (sc === 1 && Math.abs(ty) > 110) { close(); return; }
+    if (!moved) {
+      const now = Date.now();
+      if (now - lastTap < 300) { lastTap = 0; zoomAt(e.clientX, e.clientY, sc > 1 ? 1 : 2.5); return; }
+      lastTap = now;
+      const tapX = e.clientX, tapY = e.clientY, onImg = e.target === im;
+      setTimeout(() => { if (lastTap === now && sc === 1 && !onImg) close(); }, 300);
+      return;
+    }
+    clamp(); apply(true);
+  };
+  ov.addEventListener("pointerup", up); ov.addEventListener("pointercancel", up);
+  ov.addEventListener("wheel", e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.max(1, Math.min(5, sc * (e.deltaY < 0 ? 1.2 : 1 / 1.2)))); }, { passive: false });
+  apply(false); ov.querySelector(".vclose").focus();
+}
+document.addEventListener("click", e => { const z = e.target.closest("img[data-zoom]"); if (z && z.src) { e.preventDefault(); e.stopPropagation(); openViewer(z.src, z.alt); } }, true);
+document.addEventListener("keydown", e => { const z = e.target.closest && e.target.closest("img[data-zoom]"); if (z && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openViewer(z.src, z.alt); } });
 
 /* ---------- face detection (runs on the device, before upload) ---------- */
 let faceDet = null;
