@@ -796,9 +796,20 @@ function cropModal(dataUrl, done) {
   im.src = dataUrl;
 }
 function pickProfilePhoto() {
+  const close = modal(`<div class="pmhead"><h2>Profile photo</h2><button class="btn small" id="pmX">Cancel</button></div>
+   <p style="margin:0;font-size:14px">Everyone on Unbadged can see your profile photo. Should faces in it be blurred?</p>
+   <label class="reason"><input type="radio" name="pfBlur" value="1" checked><span><b>Blur faces</b> (recommended)<br><span class="fine">Keeps you anonymous. Faces are found and blurred before upload.</span></span></label>
+   <label class="reason"><input type="radio" name="pfBlur" value="0"><span><b>Show my face</b><br><span class="fine">Your face will be visible to every member.</span></span></label>
+   <div class="warn" id="pfWarn" hidden><b>Heads up:</b> anyone on Unbadged, including coworkers or managers who join, could recognize you, and they can screenshot it. That ties your posts and chats to you. You can switch back to a blurred photo or an icon any time, but screenshots can't be taken back.</div>
+   <div class="row" style="justify-content:flex-end"><button class="btn primary" id="pfGo">Choose photo</button></div>`);
+  const sync = () => { $("#pfWarn").hidden = document.querySelector('input[name="pfBlur"]:checked').value === "1"; };
+  document.querySelectorAll('input[name="pfBlur"]').forEach(r => r.onchange = sync);
+  $("#pfGo").onclick = () => { const blur = document.querySelector('input[name="pfBlur"]:checked').value === "1"; close(); choosePhotoFile(blur); };
+}
+function choosePhotoFile(blur) {
   const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*";
   inp.onchange = () => { const f = inp.files[0]; if (!f) return;
-    processPhoto(f, { blur: true, note: "Your profile photo is seen by everyone, so faces are blurred to keep you anonymous." }, url => cropModal(url, async out => {
+    processPhoto(f, blur ? { blur: true, note: "Your profile photo is seen by everyone, so faces are blurred to keep you anonymous." } : { blur: false, note: "You chose to show your face. Every member can see this photo." }, url => cropModal(url, async out => {
       try {
         const blob = await (await fetch(out)).blob(), me = P(S.uid), old = me.avatar_path, path = `${S.uid}/avatar-${crypto.randomUUID()}.jpg`;
         const { error } = await sb.storage.from("photos").upload(path, blob, { contentType: "image/jpeg" }); if (error) throw error;
@@ -821,7 +832,7 @@ function avatarPicker(cur) { return `<div class="avgrid" role="radiogroup" aria-
 function renderSettings() {
   const me = P(S.uid), pol = [
     ["House rules", "18+ only. No sexual content. Vent about the job, not specific people. No threats, hate, or doxxing. Don't post company secrets."],
-    ["Photo and face-blur policy", "Every photo has location data removed. Faces are found and blurred on your device before upload in public posts and public rooms. Private groups can allow faces. DMs leave faces visible."],
+    ["Photo and face-blur policy", "Every photo has location data removed. Faces are found and blurred on your device before upload in public posts and public rooms. Private groups can allow faces. DMs leave faces visible. Profile photos blur faces unless you choose to show yours."],
     ["Privacy", "Unbadged never asks for your name, email, phone, or location. Pay Check entries are stored with no username. During the beta, private messages aren't end-to-end encrypted."],
   ];
   $("#main").innerHTML = `<div class="col">
@@ -831,7 +842,7 @@ function renderSettings() {
     <div class="row followrow"><button class="followstat" data-flist="followers"><b class="mono">${S.follows.in.size}</b><span>Followers</span></button><button class="followstat" data-flist="following"><b class="mono">${S.follows.out.size}</b><span>Following</span></button></div>
     <span class="setlabel">Profile photo</span>
     <div class="row"><button class="btn small primary" id="sPhoto">${me.avatar_path ? "Change photo" : "Upload a photo"}</button>${me.avatar_path ? '<button class="btn small" id="sPhotoX">Remove photo</button>' : ""}</div>
-    <span class="fine" style="margin-top:-4px">Any photo you want. Everyone can see it, so faces get blurred. ${me.role === "owner" ? "It shows inside your gold founder ring." : "Remove it to go back to an icon."}</span>
+    <span class="fine" style="margin-top:-4px">Any photo you want. Everyone can see it. Faces are blurred unless you choose to show yours. ${me.role === "owner" ? "It shows inside your gold founder ring." : "Remove it to go back to an icon."}</span>
     ${me.role === "owner" ? '<div class="ownerbox"><b>Founder look locked in.</b> The gold founder ring and FOUNDER tag are reserved for your account.</div><button class="btn small primary" data-view="owner" style="align-self:flex-start">Open Owner tools</button>' : `<span class="setlabel">${me.avatar_path ? "Icon (shows if you remove your photo)" : "Or pick an icon"}</span>${avatarPicker(me.avatar)}`}
     <span class="setlabel">Username</span>
     <div class="row"><input type="text" id="sName" value="${esc(me.username)}" maxlength="20" style="flex:1;min-width:0;font-family:var(--f-mono)"><button class="btn small primary" id="sSave">Save</button></div>
