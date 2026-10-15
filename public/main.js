@@ -67,6 +67,11 @@ function nameProblem(n, allowReserved) {
 function setAccent(c) { S.accent = c; if (!holidayNow) document.documentElement.style.setProperty("--accent", c); store.set("accent", c); }
 setAccent(store.get("accent", "#ff7b30"));
 applyHoliday();
+// text size: a setting instead of pinch-to-zoom
+const TEXT_SIZES = [[90, "Smaller"], [100, "Default"], [115, "Larger"], [130, "Largest"]];
+function setTextSize(v) { document.documentElement.style.setProperty("--tz", v / 100); store.set("textSize", v); }
+setTextSize(store.get("textSize", 100));
+document.addEventListener("gesturestart", e => { if (!e.target.closest || !e.target.closest(".viewer")) e.preventDefault(); }, { passive: false }); // iPhone: no pinch zoom
 setInterval(() => { if (!S.holidayPreview) applyHoliday(); }, 3600e3); // roll themes over at the right day
 
 /* ---------- photos: signed links, upload ---------- */
@@ -1036,7 +1041,11 @@ function renderSettings() {
     <div class="row" style="gap:12px">${BETA_AV("lg")}<div><b>You're an official Unbadged beta tester.</b><div class="fine">This look is only for testers. Turn either part off any time.</div></div></div>
     ${sw("sBetaAv", me.show_beta_av, "Show beta tester avatar", me.avatar_path ? "Your profile photo shows inside the beta ring." : "Replaces your icon with the beta avatar.")}
     ${sw("sBetaTag", me.show_beta_tag, "Show BETA TESTER tag", "Shows next to your username everywhere.")}</div>` : ""}
-   <div class="card setcard"><span class="eyebrow">Appearance</span><span class="setlabel">Accent color</span>
+   <div class="card setcard"><span class="eyebrow">Appearance</span>
+    <span class="setlabel">Text size</span>
+    <div class="seg4" role="radiogroup" aria-label="Text size">${TEXT_SIZES.map(([v, l]) => `<button role="radio" aria-selected="${store.get("textSize", 100) === v}" data-tsize="${v}" style="font-size:${Math.round(13 * v / 100)}px">${l}</button>`).join("")}</div>
+    <span class="fine" style="margin-top:-4px">Makes posts, chats, and pages easier to read.</span>
+    <span class="setlabel">Accent color</span>
     <div class="swatches">${ACCENTS.map(([n, c]) => `<button class="swatch" role="radio" aria-checked="${S.accent === c}" data-accent="${c}" title="${n}" style="background:${c}"><span>${n}</span></button>`).join("")}</div>
     ${holidayNow && !S.holidayPreview ? `<span class="fine">The ${esc(HOLI[holidayNow.key].name)} theme is using its own color right now. Yours comes back when the holiday ends.</span>` : ""}
     </div>
@@ -1094,6 +1103,7 @@ function renderSettings() {
   if ($("#lCancel")) $("#lCancel").onclick = () => { S.linkCode = null; renderSettings(); };
   if ($("#qrBox")) drawQR($("#qrBox"), location.origin + "/#link=" + S.linkCode.replace("-", ""));
   $("#sProf").onchange = e => { S.prof = e.target.checked; store.set("prof", S.prof); };
+  document.querySelectorAll("[data-tsize]").forEach(b => b.onclick = () => { setTextSize(+b.dataset.tsize); renderSettings(); });
   $("#sCheerOn").onchange = e => { store.set("celebrate", e.target.checked); renderSettings(); };
   const vol = $("#sVol"); vol.oninput = () => { const v = +vol.value; store.set("celebrateVol", v); $("#sVolN").textContent = v ? v + "%" : "Off"; $("#sVolIcon").textContent = v === 0 ? "🔇" : v < 50 ? "🔉" : "🔊"; setCelebrateVolume(v); };
   vol.onchange = () => { if (+vol.value) SOUNDS.chime(); }; // a quick sample at the new volume

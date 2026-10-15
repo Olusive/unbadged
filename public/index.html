@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Unbadged</title>
 <meta name="description" content="Anonymous community for people who work. Closed beta.">
-<meta name="theme-color" content="#161c24">
+<meta name="theme-color" content="#1e2530">
 <meta name="robots" content="noindex,nofollow">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-title" content="Unbadged">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
-<style>:root{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<style>body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
 <style>
 /* Layout: break-room app shell. Aisle-sign nav | feed | headlines rail. Phone: bottom tab bar.
    One look: dark blue-grey base. The accent is a member setting (Settings > Appearance). */
@@ -421,7 +421,27 @@ html,body{overflow-x:hidden;overflow-x:clip;max-width:100%}
   body.chatopen .tabs,body.chatopen .rplayer{visibility:hidden}
 }
 /* no double-tap zoom on phones (pinch to zoom still works; the photo viewer keeps its own double-tap) */
-html,body,button,a,input,select,textarea,label{touch-action:manipulation}
+html,body,body *{touch-action:pan-x pan-y}
+.viewer,.viewer *,.cropbox canvas{touch-action:none!important}
+/* ---- phone app frame: header under the status bar, tabs flush to the bottom, only the middle scrolls ---- */
+@media (max-width:720px){
+  html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+  .app{position:fixed;inset:0;height:auto}
+  .topbar{flex:none;gap:10px;row-gap:8px;padding-top:calc(env(safe-area-inset-top,0px) + 8px);padding-bottom:8px}
+  .logo{font-size:21px;gap:7px}
+  .logo .mark{width:28px;height:20px}
+  .logo .tag{font-size:11px;padding:1px 5px}
+  #meHandle,#meTag,.me .ageband{display:none}
+  #meAv .av{width:32px;height:32px}
+  #meCog{width:36px;height:36px}
+  .holibanner{font-size:13px;padding:3px 10px}
+  .shell{flex:1;min-height:0;display:block}
+  main{height:100%;padding-top:14px;padding-bottom:calc(78px + env(safe-area-inset-bottom,0px))}
+  .tabs{padding-top:6px;padding-bottom:max(6px,env(safe-area-inset-bottom,0px))}
+  .viewhead h1{font-size:28px}
+}
+/* text size (Settings > Appearance) */
+#main > .col,.room,.msg,.sysmsg,.sendbar,.threadhead,.rset{zoom:var(--tz,1)}
 .mobonly{display:none}
 .mobrail{display:none}
 @media (max-width:1060px){.mobrail{display:block;margin-bottom:14px}}
@@ -586,10 +606,10 @@ html,body,button,a,input,select,textarea,label{touch-action:manipulation}
 <noscript><p style="padding:20px">Unbadged needs JavaScript turned on.</p></noscript>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/lib.js?v=1792090595"></script>
-<script src="/holidays.js?v=1792090595"></script>
-<script src="/celebrate.js?v=1792090595"></script>
-<script src="/terms.js?v=1792090595"></script>
-<script src="/main.js?v=1792090595"></script>
+<script src="/lib.js?v=1792090850"></script>
+<script src="/holidays.js?v=1792090850"></script>
+<script src="/celebrate.js?v=1792090850"></script>
+<script src="/terms.js?v=1792090850"></script>
+<script src="/main.js?v=1792090850"></script>
 </body>
 </html>
