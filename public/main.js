@@ -504,15 +504,23 @@ async function renderPay() {
 function renderBoards() {
   $("#main").innerHTML = `<div class="col" style="max-width:900px">
    <div class="viewhead"><h1>Boards</h1><span class="muted" style="font-size:13px">Join your company, your industry, or anyone's.</span></div>
-   <div class="row"><input type="text" id="bsearch" placeholder="Search companies and industries" style="flex:1;min-width:0"></div>
-   <div class="boards" id="blist"></div>
-   <p class="fine">Want a board for your company? Ask in Settings → Send feedback.</p></div>`;
-  const draw = q => {
-    $("#blist").innerHTML = S.boards.filter(b => b.id.toLowerCase().includes(q.toLowerCase())).map(b => `<div class="card bcard"><span class="k">${esc(b.kind)}${b.locked ? " · 🔒 locked" : ""}</span><h3>${esc(b.id)}</h3><p class="muted" style="margin:0;font-size:14px">${esc(b.description)}</p>
+   <div class="row"><input type="text" id="bsearch" placeholder="Search jobs and companies, like welder or Costco" style="flex:1;min-width:0" value="${esc(S.bQ || "")}"></div>
+   <div class="chips" id="bcats"></div>
+   <div id="blist"></div>
+   <p class="fine">Don't see your job or company? Ask for a board in Settings → Send feedback.</p></div>`;
+  const cats = [...new Set(S.boards.map(b => b.kind))], card = (b, grouped) => `<div class="card bcard">${grouped && !b.locked ? "" : `<span class="k">${grouped ? "" : esc(b.kind)}${b.locked ? (grouped ? "" : " · ") + "🔒 locked" : ""}</span>`}<h3>${esc(b.id)}</h3><p class="muted" style="margin:0;font-size:14px">${esc(b.description)}</p>
      <div class="row"><button class="btn small ${S.joined.has(b.id) ? "" : "primary"}" data-join="${esc(b.id)}">${S.joined.has(b.id) ? "Joined" : "Join"}</button><button class="btn small" data-board="${esc(b.id)}">View</button></div>
-     <div class="row">${S.blocks.board.has(b.id) ? `<span class="fine">⊘ Blocked</span><button class="act" data-unblock-board="${esc(b.id)}">Unblock</button>` : `<button class="act" data-rpt='${esc(JSON.stringify({ kind: "board", name: b.id }))}'>⚑ Report</button><button class="act" data-bboard="${esc(b.id)}">⊘ Block board</button>`}${owner() ? `<button class="act" data-olock="${esc(b.id)}" data-lock="${!b.locked}">${b.locked ? "Unlock" : "Lock"} (owner)</button>` : ""}</div></div>`).join("");
+     <div class="row">${S.blocks.board.has(b.id) ? `<span class="fine">⊘ Blocked</span><button class="act" data-unblock-board="${esc(b.id)}">Unblock</button>` : `<button class="act" data-rpt='${esc(JSON.stringify({ kind: "board", name: b.id }))}'>⚑ Report</button><button class="act" data-bboard="${esc(b.id)}">⊘ Block board</button>`}${owner() ? `<button class="act" data-olock="${esc(b.id)}" data-lock="${!b.locked}">${b.locked ? "Unlock" : "Lock"} (owner)</button>` : ""}</div></div>`;
+  const draw = () => {
+    const q = (S.bQ || "").toLowerCase(), cat = S.bCat || "All";
+    $("#bcats").innerHTML = ["All", "Joined", ...cats].map(c => `<button class="chip" data-bcat="${esc(c)}" aria-pressed="${cat === c}">${esc(c)}</button>`).join("");
+    const list = S.boards.filter(b => (cat === "All" || (cat === "Joined" ? S.joined.has(b.id) : b.kind === cat)) && (!q || (b.id + " " + b.kind + " " + b.description).toLowerCase().includes(q)));
+    const groups = cat === "All" && !q ? cats.map(c => [c, list.filter(b => b.kind === c)]).filter(([, l]) => l.length) : [[null, list]];
+    $("#blist").innerHTML = list.length ? groups.map(([c, l]) => `${c ? `<h2 class="bgroup">${esc(c)}</h2>` : ""}<div class="boards">${l.map(b => card(b, !!c)).join("")}</div>`).join("")
+      : `<div class="card" style="padding:20px"><span class="muted">${cat === "Joined" ? "You haven't joined any boards yet." : "No boards match. Ask for one in Settings → Send feedback."}</span></div>`;
+    document.querySelectorAll("[data-bcat]").forEach(b => b.onclick = () => { S.bCat = b.dataset.bcat; draw(); });
   };
-  draw(""); $("#bsearch").oninput = e => draw(e.target.value);
+  draw(); $("#bsearch").oninput = e => { S.bQ = e.target.value; draw(); };
 }
 document.addEventListener("click", async e => {
   const j = e.target.closest("[data-join]");
