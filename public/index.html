@@ -284,6 +284,17 @@ img[data-zoom]{cursor:zoom-in}
 .pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
 .pcell{aspect-ratio:1;overflow:hidden;border-radius:6px;background:var(--surface-2)}
 .pcell img{width:100%;height:100%;object-fit:cover;display:block}
+.bav{position:relative;padding:2px;background:conic-gradient(from var(--spin,0deg),#7df9ff,#b18cff,#ff7ae6,#7df9ff);animation:spin 3s linear infinite}
+.bav-in{display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 50% 35%,#1d1650,#070818);overflow:hidden}
+.bav-in svg{width:74%;height:74%}
+.av.bav svg{width:74%;height:74%}
+.av.lg.bav,.av.xl.bav{padding:3px;box-shadow:0 0 18px rgba(177,140,255,.5)}
+.av.bav.avimg .bav-in{background:#000}
+.btag{display:inline-flex;align-items:center;gap:3px;margin-left:6px;padding:1px 7px 1px 5px;border-radius:4px;font-family:var(--f-display);font-weight:700;font-size:11px;letter-spacing:.12em;color:#0b0b22;vertical-align:middle;white-space:nowrap;
+  background:linear-gradient(110deg,#7df9ff 0%,#b18cff 35%,#ffffff 50%,#ff7ae6 65%,#7df9ff 100%);background-size:250% 100%;animation:shine 3.6s ease-in-out infinite;box-shadow:0 0 0 1px rgba(177,140,255,.55),0 0 10px rgba(125,249,255,.3)}
+.btag svg{width:10px;height:10px}
+.betacard{border-color:rgba(177,140,255,.45)}
+@media (prefers-reduced-motion:reduce){.bav,.btag{animation:none}}
 .mobonly{display:none}
 .mobrail{display:none}
 @media (max-width:1060px){.mobrail{display:block;margin-bottom:14px}}
@@ -448,8 +459,8 @@ img[data-zoom]{cursor:zoom-in}
 <noscript><p style="padding:20px">Unbadged needs JavaScript turned on.</p></noscript>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/lib.js?v=1792082602"></script>
-<script src="/terms.js?v=1792082602"></script>
-<script src="/main.js?v=1792082602"></script>
+<script src="/lib.js?v=1792083044"></script>
+<script src="/terms.js?v=1792083044"></script>
+<script src="/main.js?v=1792083044"></script>
 </body>
 </html>

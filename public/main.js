@@ -23,11 +23,13 @@ S.prof = store.get("prof", true); S.hideLang = store.get("hideLang", false); S.n
 const P = id => S.profiles.get(id) || { id, username: "Someone", avatar: 0, role: "member", banned: false };
 const isMe = id => id === S.uid;
 const owner = () => P(S.uid).role === "owner";
-const OT = id => P(id).role === "owner" ? FTAG() : "";
+const showBetaAv = p => p.beta && p.show_beta_av && p.role !== "owner";
+const OT = id => { const p = P(id); return p.role === "owner" ? FTAG() : p.beta && p.show_beta_tag ? BTAG() : ""; };
 function AV(id, size = "") {
   const p = P(id), pic = p.avatar_path && S.urls.get(p.avatar_path);
-  if (pic) { const big = size === "lg" || size === "xl", im = `<img src="${pic}" alt="${big ? esc(p.username) + "'s profile photo" : ""}" ${big ? "data-zoom" : ""}>`; return p.role === "owner" ? `<span class="av ${size} oav avimg" aria-label="Founder"><span class="oav-in">${im}</span></span>` : `<span class="av ${size} avimg" aria-hidden="${size === "lg" || size === "xl" ? "false" : "true"}">${im}</span>`; }
+  if (pic) { const big = size === "lg" || size === "xl", im = `<img src="${pic}" alt="${big ? esc(p.username) + "'s profile photo" : ""}" ${big ? "data-zoom" : ""}>`; return p.role === "owner" ? `<span class="av ${size} oav avimg" aria-label="Founder"><span class="oav-in">${im}</span></span>` : showBetaAv(p) ? `<span class="av ${size} bav avimg" aria-label="Beta tester"><span class="bav-in">${im}</span></span>` : `<span class="av ${size} avimg" aria-hidden="${size === "lg" || size === "xl" ? "false" : "true"}">${im}</span>`; }
   if (p.role === "owner") return OWNER_AV(size);
+  if (showBetaAv(p)) return BETA_AV(size);
   const i = Math.max(0, Math.min(9, p.avatar || 0));
   return `<span class="av ${size}" style="background:${AV_COL[i]}" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${AV_GLY[i][1]}"/></svg></span>`;
 }
@@ -226,7 +228,7 @@ function processPhoto(file, pctx, done) {
 
 /* ---------- loading data ---------- */
 async function loadProfiles() {
-  const { data } = await sb.from("profiles").select("id,username,avatar,avatar_path,role,banned,company,bio,interests,hobbies,likes");
+  const { data } = await sb.from("profiles").select("id,username,avatar,avatar_path,role,banned,company,bio,interests,hobbies,likes,beta,show_beta_av,show_beta_tag");
   S.profiles = new Map((data || []).map(p => [p.id, p]));
   const need = [...S.profiles.values()].map(p => p.avatar_path).filter(x => x && !S.urls.has(x));
   if (need.length) { const { data: sg } = await sb.storage.from("photos").createSignedUrls(need, 86400); (sg || []).forEach(d => { if (d.signedUrl) S.urls.set(d.path, d.signedUrl); }); }
@@ -733,7 +735,7 @@ async function renderProfile() {
     <div class="row">${me ? '<button class="btn small primary" id="pEdit">Edit profile</button><button class="btn small" data-view="settings">Settings</button>'
       : blocked ? '<button class="btn small" id="uUnblk">Unblock</button>'
       : `<button class="btn small ${fol ? "" : "primary"}" id="uFollow">${fol ? "✓ Following" : "+ Follow"}</button>${mutual(id) ? '<button class="btn small" id="uMsg">Message</button>' : ""}<span style="flex:1"></span><button class="btn small" id="uRpt">⚑ Report</button><button class="btn small" id="uBlk">⊘ Block</button>`}</div>
-    ${owner() && p.role !== "owner" ? `<div class="row ownerbox"><span class="fine" style="flex:1">Owner tools</span><button class="btn small" id="oRem">Remove their posts</button><button class="btn small dangerbtn" id="oBan">${p.banned ? "Unban" : "Ban account"}</button></div>` : ""}
+    ${owner() && p.role !== "owner" ? `<div class="row ownerbox"><span class="fine" style="flex:1">Owner tools</span><button class="btn small" id="oBeta">${p.beta ? "Remove beta tester" : "Make beta tester"}</button><button class="btn small" id="oRem">Remove their posts</button><button class="btn small dangerbtn" id="oBan">${p.banned ? "Unban" : "Ban account"}</button></div>` : ""}
    </div>
    ${blocked ? "" : `<div class="card setcard"><span class="eyebrow">About</span>
     ${about.length ? about.map(([l, a]) => `<div class="psec"><span class="setlabel">${l}</span><div class="tags">${tagList(a)}</div></div>`).join("") : `<span class="fine">${me ? "Add your interests, hobbies, and things you like with Edit profile." : "Nothing here yet."}</span>`}</div>
@@ -750,6 +752,7 @@ async function renderProfile() {
   if ($("#uRpt")) $("#uRpt").onclick = () => reportModal({ kind: "account", name: p.username });
   if ($("#uBlk")) $("#uBlk").onclick = () => confirmBlock(id);
   if ($("#uUnblk")) $("#uUnblk").onclick = async () => { await sb.from("blocks").delete().eq("kind", "user").eq("target", id); S.blocks.user.delete(id); renderProfile(); toast("Unblocked " + p.username); };
+  if ($("#oBeta")) $("#oBeta").onclick = async () => { const on = !p.beta, { error } = await sb.rpc("set_beta", { u: id, on_: on }); if (error) { toast(errMsg(error)); return; } await loadProfiles(); renderProfile(); toast(on ? p.username + " is now a beta tester" : p.username + " is no longer a beta tester"); };
   if ($("#oRem")) $("#oRem").onclick = async () => { const { error } = await sb.rpc("remove_user_posts", { uname: p.username }); if (error) { toast(errMsg(error)); return; } S.feedLoaded = false; S.uPostsFor = null; renderProfile(); toast("Removed posts by " + p.username); };
   if ($("#oBan")) $("#oBan").onclick = async () => { const { error } = await sb.rpc("ban_user", { uname: p.username, do_ban: !p.banned }); if (error) { toast(errMsg(error)); return; } await loadProfiles(); S.feedLoaded = false; renderProfile(); toast(p.banned ? "Unbanned" : p.username + " is banned"); };
 }
@@ -898,7 +901,7 @@ function renderSettings() {
   $("#main").innerHTML = `<div class="col">
    <div class="viewhead"><h1>Settings</h1></div>
    <div class="card setcard"><span class="eyebrow">Account</span>
-    <div class="row" style="gap:12px"><span id="setAv">${AV(S.uid, "lg")}</span><div><b class="mono ${me.role === "owner" ? "oname" : ""}" style="font-size:17px">${esc(me.username)}</b>${OT(S.uid)}<div class="fine">18+ confirmed · ${me.role === "owner" ? "Owner" : "Beta tester"}${me.company ? " · " + esc(me.company) : ""}</div></div></div>
+    <div class="row" style="gap:12px"><span id="setAv">${AV(S.uid, "lg")}</span><div><b class="mono ${me.role === "owner" ? "oname" : ""}" style="font-size:17px">${esc(me.username)}</b>${OT(S.uid)}<div class="fine">18+ confirmed · ${me.role === "owner" ? "Owner" : me.beta ? "Official beta tester" : "Member"}${me.company ? " · " + esc(me.company) : ""}</div></div></div>
     <button class="btn small" data-user="${S.uid}" style="align-self:flex-start">View my profile</button>
     <div class="row followrow"><button class="followstat" data-flist="followers"><b class="mono">${S.follows.in.size}</b><span>Followers</span></button><button class="followstat" data-flist="following"><b class="mono">${S.follows.out.size}</b><span>Following</span></button></div>
     <span class="setlabel">Profile photo</span>
@@ -913,6 +916,10 @@ function renderSettings() {
     <span class="setlabel">Recovery phrase</span>
     <div id="sRecBox"><p class="fine" style="margin:0">Unbadged never stores your phrase where anyone can read it, so it can't show it again. Lost it? Make a new one while you're signed in.</p><button class="btn small" id="sRecNew" style="margin-top:6px">Make a new recovery phrase</button></div>
    </div>
+   ${me.beta && me.role !== "owner" ? `<div class="card setcard betacard"><span class="eyebrow" style="color:#b18cff">Beta tester</span>
+    <div class="row" style="gap:12px">${BETA_AV("lg")}<div><b>You're an official Unbadged beta tester.</b><div class="fine">This look is only for testers. Turn either part off any time.</div></div></div>
+    ${sw("sBetaAv", me.show_beta_av, "Show beta tester avatar", me.avatar_path ? "Your profile photo shows inside the beta ring." : "Replaces your icon with the beta avatar.")}
+    ${sw("sBetaTag", me.show_beta_tag, "Show BETA TESTER tag", "Shows next to your username everywhere.")}</div>` : ""}
    <div class="card setcard"><span class="eyebrow">Appearance</span><span class="setlabel">Accent color</span>
     <div class="swatches">${ACCENTS.map(([n, c]) => `<button class="swatch" role="radio" aria-checked="${S.accent === c}" data-accent="${c}" title="${n}" style="background:${c}"><span>${n}</span></button>`).join("")}</div></div>
    <div class="card setcard"><span class="eyebrow">Devices</span>
@@ -964,6 +971,8 @@ function renderSettings() {
   if ($("#qrBox")) drawQR($("#qrBox"), location.origin + "/#link=" + S.linkCode.replace("-", ""));
   $("#sProf").onchange = e => { S.prof = e.target.checked; store.set("prof", S.prof); };
   document.querySelectorAll("[data-flist]").forEach(b => b.onclick = () => followListModal(b.dataset.flist));
+  const betaSw = (id, col) => { const el = $(id); if (el) el.onchange = async e => { const v = e.target.checked; const { error } = await sb.from("profiles").update({ [col]: v }).eq("id", S.uid); if (error) { toast(errMsg(error)); e.target.checked = !v; return; } me[col] = v; renderNav(); renderSettings(); }; };
+  betaSw("#sBetaAv", "show_beta_av"); betaSw("#sBetaTag", "show_beta_tag");
   $("#sPhoto").onclick = pickProfilePhoto; if ($("#sPhotoX")) $("#sPhotoX").onclick = removeProfilePhoto;
   const sn = $("#sNotif"); if (sn) sn.onchange = async e => {
     const w = $("#sNotifW"); w.hidden = true;
@@ -991,9 +1000,28 @@ function renderTerms() {
 }
 
 /* ---------- owner tools ---------- */
+function betaRowsHTML() {
+  const q = (S.betaQ || "").toLowerCase();
+  const list = [...S.profiles.values()].filter(p => p.role !== "owner" && (!q || p.username.toLowerCase().includes(q))).sort((a, b) => (b.beta - a.beta) || a.username.localeCompare(b.username));
+  return list.map(p => `<div class="mem">${AV(p.id, "sm")}${UL(p.id)}${p.banned ? '<span class="r18">Banned</span>' : ""}<span style="flex:1"></span><button class="btn small ${p.beta ? "" : "primary"}" data-obeta="${p.id}" data-on="${!p.beta}">${p.beta ? "Remove" : "Make beta tester"}</button></div>`).join("") || '<span class="fine">No members match.</span>';
+}
+function betaOwnerHTML() {
+  const n = [...S.profiles.values()].filter(p => p.beta && p.role !== "owner").length;
+  return `<div class="card setcard"><span class="eyebrow" style="color:#b18cff">Beta testers · ${n}</span>
+   <div class="row" style="gap:12px">${BETA_AV("lg")}<p style="margin:0;font-size:14px">Beta testers get this avatar and a ${BTAG()} tag that nobody else can get. They can hide either one in their Settings.</p></div>
+   <input type="text" id="obQ" placeholder="Search usernames" value="${esc(S.betaQ || "")}">
+   <div id="obList">${betaRowsHTML()}</div></div>`;
+}
+function wireBetaOwner() {
+  const q = $("#obQ"); q.oninput = () => { S.betaQ = q.value; $("#obList").innerHTML = betaRowsHTML(); };
+  $("#obList").onclick = async e => { const b = e.target.closest("[data-obeta]"); if (!b) return; const on = b.dataset.on === "true", name = P(b.dataset.obeta).username;
+    busy(b, true, "…"); const { error } = await sb.rpc("set_beta", { u: b.dataset.obeta, on_: on }); if (error) { busy(b, false); toast(errMsg(error)); return; }
+    await loadProfiles(); renderOwner(); toast(on ? name + " is now a beta tester" : name + " is no longer a beta tester"); };
+}
 async function renderOwner() {
   if (!owner()) return go("home");
   const tab = S.otab || "reports";
+  if (tab === "beta") await loadProfiles();
   const [{ data: st }, rep, inv, fb] = await Promise.all([
     sb.rpc("owner_stats"),
     tab === "reports" ? sb.from("reports").select("*").order("created_at", { ascending: false }).limit(100) : { data: [] },
@@ -1004,10 +1032,11 @@ async function renderOwner() {
   $("#main").innerHTML = `<div class="col" style="max-width:860px">
    <div class="viewhead"><div><span class="eyebrow" style="color:#ffc83d">Only you can see this</span><h1>Owner tools</h1></div></div>
    <div class="ostats"><div class="card"><b class="mono">${s.open_reports ?? 0}</b><span>open reports</span></div><div class="card"><b class="mono">${s.unused_invites ?? 0}</b><span>unused invites</span></div><div class="card"><b class="mono">${s.members ?? 0}</b><span>members</span></div><div class="card"><b class="mono">${s.feedback ?? 0}</b><span>feedback notes</span></div></div>
-   <div class="seg4" style="grid-template-columns:repeat(3,1fr)"><button aria-selected="${tab === "reports"}" data-otab="reports">Reports</button><button aria-selected="${tab === "invites"}" data-otab="invites">Invite codes</button><button aria-selected="${tab === "feedback"}" data-otab="feedback">Feedback</button></div>
+   <div class="seg4" style="grid-template-columns:repeat(4,1fr)"><button aria-selected="${tab === "reports"}" data-otab="reports">Reports</button><button aria-selected="${tab === "beta"}" data-otab="beta">Beta testers</button><button aria-selected="${tab === "invites"}" data-otab="invites">Invite codes</button><button aria-selected="${tab === "feedback"}" data-otab="feedback">Feedback</button></div>
    ${tab === "reports" ? (reports.map(r => `<div class="card rq ${r.status}"><div class="row" style="justify-content:space-between"><span><span class="shift">${esc(KIND_LABEL[r.kind] || r.kind)}</span> <b class="mono">${esc(r.target)}</b></span><span class="fine">${ago(r.created_at)} ago · from ${esc(P(r.reporter).username)}</span></div>
      <div><b>${esc(r.reason)}</b>${r.details ? `<div class="muted" style="font-size:14px">${esc(r.details)}</div>` : ""}</div>
      ${r.status === "open" ? `<div class="row"><button class="btn small" data-odis="${r.id}">Dismiss</button>${["account", "post", "message"].includes(r.kind) ? `<button class="btn small" data-orem="${r.id}" data-name="${esc(r.target)}">Remove their posts</button><button class="btn small dangerbtn" data-oban="${r.id}" data-name="${esc(r.target)}">Ban account</button>` : r.kind === "board" ? `<button class="btn small dangerbtn" data-olockr="${r.id}" data-name="${esc(r.target)}">Lock board</button>` : ""}</div>` : `<span class="fine">✓ ${esc(r.status)}</span>`}</div>`).join("") || '<div class="card" style="padding:16px"><span class="muted">No reports. Nice.</span></div>')
+    : tab === "beta" ? betaOwnerHTML()
     : tab === "invites" ? `<div class="card setcard ownercard"><span class="eyebrow" style="color:#ffc83d">Beta invite codes</span>
       <p style="margin:0;font-size:14px">Each code lets one person join. Send it to them; once they sign up with it, it's used up.</p>
       <div class="row"><label class="fine" for="ocN">How many</label><select id="ocN">${[1, 3, 5, 10, 25].map(n => `<option>${n}</option>`).join("")}</select><input type="text" id="ocNote" placeholder="Note to yourself, like 'Jake from work'" maxlength="40" style="flex:1;min-width:160px"><button class="btn small primary" id="ocGo">Create codes</button></div>
@@ -1015,6 +1044,7 @@ async function renderOwner() {
     : (feed.map(f => `<div class="card rq"><div class="row" style="justify-content:space-between"><span class="shift">${esc(f.type)}</span><span class="fine">${ago(f.created_at)} ago · from ${esc(P(f.user_id).username)}</span></div><div style="font-size:14px">${esc(f.body)}</div></div>`).join("") || '<div class="card" style="padding:16px"><span class="muted">No feedback yet.</span></div>')}
   </div>`;
   document.querySelectorAll("[data-otab]").forEach(b => b.onclick = () => { S.otab = b.dataset.otab; renderOwner(); });
+  if (tab === "beta") wireBetaOwner();
   const act = async (fn, args, msg, id, status) => { const { error } = await sb.rpc(fn, args); if (error) { toast(errMsg(error)); return; } if (id) await sb.rpc("resolve_report", { p_id: +id, p_status: status }); if (msg) toast(msg); await loadProfiles(); S.feedLoaded = false; renderOwner(); };
   document.querySelectorAll("[data-odis]").forEach(b => b.onclick = () => act("resolve_report", { p_id: +b.dataset.odis, p_status: "dismissed" }));
   document.querySelectorAll("[data-orem]").forEach(b => b.onclick = () => act("remove_user_posts", { uname: b.dataset.name }, "Removed posts by " + b.dataset.name, b.dataset.orem, "posts removed"));

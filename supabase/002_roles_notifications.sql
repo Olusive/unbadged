@@ -193,3 +193,5 @@ grant execute on function private.can_manage(uuid,uuid) to authenticated;
 
 -- (applied separately) profile about section
 -- bio text (<=300), interests/hobbies/likes text[] (<=12 each), update granted to authenticated
+
+-- (applied separately) beta testers: profiles.beta (owner-set via set_beta), show_beta_av / show_beta_tag (user toggles)

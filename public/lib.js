@@ -119,3 +119,8 @@ const REASONS={
 };
 const KIND_LABEL={account:"account",post:"post",message:"message",group:"group chat",room:"room",board:"board"};
 function modal(html){const ov=$("#photoModal");ov.hidden=false;ov.innerHTML=`<div class="card pm" role="dialog">${html}</div>`;const close=()=>{ov.hidden=true;ov.innerHTML=""};const x=$("#pmX");if(x)x.onclick=close;return close}
+
+/* beta tester look: neon ring avatar + BETA TESTER tag (exclusive to testers the owner picks) */
+const BETA_GLYPH='<svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7df9ff"/><stop offset=".5" stop-color="#b18cff"/><stop offset="1" stop-color="#ff7ae6"/></linearGradient></defs><path d="M9.2 20.5V7.6a3.6 3.6 0 0 1 7.2 0c0 1.7-1.1 2.8-2.6 3.2 2 .3 3.4 1.7 3.4 3.7 0 2.3-1.8 3.9-4.2 3.9-1.4 0-2.6-.5-3.4-1.4" fill="none" stroke="url(#bg1)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.2 5.2l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z" fill="#7df9ff"/></svg>';
+function BETA_AV(size){return `<span class="av bav ${size}" aria-label="Beta tester"><span class="bav-in">${BETA_GLYPH}</span></span>`}
+const BTAG=()=>`<span class="btag" title="Official Unbadged beta tester"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z" fill="currentColor"/></svg>BETA TESTER</span>`;
