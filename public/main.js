@@ -344,7 +344,9 @@ document.addEventListener("visibilitychange", () => {
 const NAV = [["home", "Home", ICON.home], ["pay", "Pay Check", ICON.pay], ["boards", "Boards", ICON.boards], ["chats", "Chats", ICON.chat], ["dms", "Messages", ICON.dm], ["radio", "Radio", ICON.radio]];
 const SHORT = { pay: "Pay", dms: "DMs" };
 function renderNav() {
-  const b = ([id, label, ic]) => { const c = id === "chats" ? unreadTotal("group") + unreadTotal("public") : id === "dms" ? unreadTotal("dm") : 0; return `<button class="navbtn" data-view="${id}" ${S.view === id ? 'aria-current="page"' : ""}>${ic}<span>${label}</span>${c ? `<span class="count" aria-label="${c} unread">${c > 99 ? "99+" : c}</span>` : ""}</button>`; };
+  const NAV_KEYS = ["home", "pay", "boards", "chats", "dms", "radio", "owner", "settings"], hol = holidayNow && HOLI[holidayNow.key];
+  const icon = (id, ic) => hol ? `<span class="hico" aria-hidden="true">${hol.icons[NAV_KEYS.indexOf(id)] || ""}</span>` : ic;
+  const b = ([id, label, ic]) => { const c = id === "chats" ? unreadTotal("group") + unreadTotal("public") : id === "dms" ? unreadTotal("dm") : 0; return `<button class="navbtn" data-view="${id}" ${S.view === id ? 'aria-current="page"' : ""}>${icon(id, ic)}<span class="nlabel">${label}</span>${c ? `<span class="count" aria-label="${c} unread">${c > 99 ? "99+" : c}</span>` : ""}</button>`; };
   $("#navMain").innerHTML = (owner() ? [...NAV, ["owner", "Owner tools", ICON.plus]] : NAV).map(b).join("");
   $("#tabs").innerHTML = (owner() ? [...NAV, ["owner", "Owner", ICON.plus]] : NAV).map(([id, l, ic]) => b([id, SHORT[id] || l, ic])).join("");
   $("#myBoards").innerHTML = [...S.joined].filter(x => !S.blocks.board.has(x)).map(x => `<button class="boardlink" data-board="${esc(x)}">${esc(x)}</button>`).join("");
@@ -352,7 +354,7 @@ function renderNav() {
   $("#meHandle").textContent = me.username; $("#meHandle").classList.toggle("oname", me.role === "owner");
   $("#meTag").innerHTML = OT(S.uid); $("#meAv").innerHTML = AV(S.uid, "sm"); $("#meCog").innerHTML = COG;
   ["#meAv", "#meHandle"].forEach(k => { const el = $(k); el.dataset.user = S.uid; el.style.cursor = "pointer"; el.title = "Your profile"; });
-  $("#navBottom").innerHTML = `<button class="navbtn" data-view="settings" ${S.view === "settings" ? 'aria-current="page"' : ""}>${COG}<span>Settings</span></button>`;
+  $("#navBottom").innerHTML = `<button class="navbtn" data-view="settings" ${S.view === "settings" ? 'aria-current="page"' : ""}>${icon("settings", COG)}<span class="nlabel">Settings</span></button>`;
 }
 async function go(view) { S.view = view; S.roomSettings = false; await render(); const m = $("#main"); if (m) m.scrollTop = 0; }
 document.addEventListener("click", e => {
