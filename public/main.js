@@ -1419,6 +1419,44 @@ function startLive() {
     .subscribe();
 }
 
+/* ---------- pull to refresh (touch screens) ----------
+   At the top of a page, pull down and let go to refresh. Reloads data in place,
+   so the radio keeps playing and you stay on the same screen. */
+async function softRefresh() {
+  await Promise.all([loadProfiles(), loadSocial(), loadUnread()]);
+  await loadBoards();
+  S.feedLoaded = false; S.savedList = null; S.uPostsFor = null; S.onePost = null;
+  if (S.view === "radio") R.lists.clear();
+  await render(); paintUnread();
+}
+(function pullToRefresh() {
+  const NEED = 70; // how far to pull, in pixels
+  let y0 = null, x0 = 0, pull = 0, busyR = false, ind = null;
+  const atTop = t => { for (let el = t; el && el !== document.body; el = el.parentElement) if (el.scrollTop > 0) return false; return (document.scrollingElement || document.documentElement).scrollTop <= 0; };
+  const blocked = () => !S.uid || busyR || !$("#photoModal").hidden || document.querySelector(".viewer") || ($("#onb") && !$("#onb").hidden);
+  const el = () => { if (!ind) { ind = document.createElement("div"); ind.id = "ptr"; ind.setAttribute("aria-hidden", "true"); ind.innerHTML = '<span class="ptr-i">↓</span>'; document.body.appendChild(ind); } return ind; };
+  const hide = () => { y0 = null; pull = 0; if (ind) { ind.classList.remove("drag", "ready", "spin"); ind.style.transform = "translate(-50%,-70px)"; ind.style.opacity = 0; ind.querySelector(".ptr-i").textContent = "↓"; } };
+  document.addEventListener("touchstart", e => { if (e.touches.length !== 1 || blocked() || !atTop(e.target)) return; y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; pull = 0; }, { passive: true });
+  document.addEventListener("touchmove", e => {
+    if (y0 === null) return;
+    const dy = e.touches[0].clientY - y0, dx = Math.abs(e.touches[0].clientX - x0);
+    if (dy < -10 || (dx > 24 && dx > dy)) { hide(); return; } // scrolling up or swiping sideways: not a refresh
+    if (dy <= 0) return; // tiny finger jitter before the pull starts
+    pull = Math.min(dy * 0.5, 100);
+    const i = el(); i.classList.add("drag"); i.classList.toggle("ready", pull >= NEED);
+    i.style.transform = `translate(-50%,${pull - 20}px) rotate(${pull * 3}deg)`; i.style.opacity = Math.min(1, pull / 45);
+  }, { passive: true });
+  document.addEventListener("touchend", async () => {
+    if (y0 === null) return;
+    if (pull < NEED) { hide(); return; }
+    y0 = null; busyR = true;
+    const i = el(); i.classList.remove("drag", "ready"); i.classList.add("spin"); i.querySelector(".ptr-i").textContent = "↻"; i.style.transform = "translate(-50%,46px)"; i.style.opacity = 1;
+    try { await softRefresh(); toast("Up to date"); } catch (e) { toast("Couldn't refresh. Check your connection."); }
+    busyR = false; hide();
+  });
+  document.addEventListener("touchcancel", hide);
+})();
+
 /* ---------- render & boot ---------- */
 async function render() {
   renderNav();

@@ -385,6 +385,13 @@ html[data-holiday] nav.side,html[data-holiday] aside.rail,html[data-holiday] .ca
 /* phones: no sideways sliding, and 16px text boxes so iPhones don't auto-zoom when you tap them */
 html,body{overflow-x:hidden;overflow-x:clip;max-width:100%}
 @media (max-width:720px){input,select,textarea{font-size:16px!important}}
+#ptr{position:fixed;top:calc(env(safe-area-inset-top,0px) + 6px);left:50%;transform:translate(-50%,-70px);z-index:60;width:42px;height:42px;border-radius:50%;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:21px;font-weight:700;opacity:0;pointer-events:none;transition:transform .22s ease,opacity .22s ease}
+#ptr.drag{transition:none}
+#ptr.ready{border-color:var(--accent)}
+#ptr.ready .ptr-i{display:inline-block;transform:rotate(180deg)}
+#ptr.spin .ptr-i{display:inline-block;animation:ptrspin .8s linear infinite}
+@keyframes ptrspin{to{transform:rotate(360deg)}}
+#main{overscroll-behavior-y:contain}
 .mobonly{display:none}
 .mobrail{display:none}
 @media (max-width:1060px){.mobrail{display:block;margin-bottom:14px}}
@@ -549,10 +556,10 @@ html,body{overflow-x:hidden;overflow-x:clip;max-width:100%}
 <noscript><p style="padding:20px">Unbadged needs JavaScript turned on.</p></noscript>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/lib.js?v=1792088745"></script>
-<script src="/holidays.js?v=1792088745"></script>
-<script src="/celebrate.js?v=1792088745"></script>
-<script src="/terms.js?v=1792088745"></script>
-<script src="/main.js?v=1792088745"></script>
+<script src="/lib.js?v=1792088943"></script>
+<script src="/holidays.js?v=1792088943"></script>
+<script src="/celebrate.js?v=1792088943"></script>
+<script src="/terms.js?v=1792088943"></script>
+<script src="/main.js?v=1792088943"></script>
 </body>
 </html>
