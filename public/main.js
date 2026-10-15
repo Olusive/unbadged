@@ -623,7 +623,7 @@ async function renderChats() {
   if (!silenced) wireSend("room", r.id, renderChats, pctx); else { const box = document.querySelector(".msgs"); if (box) box.scrollTop = box.scrollHeight; }
 }
 function wireChatFilter() { document.querySelectorAll("[data-cboard]").forEach(b => b.onclick = () => { S.chatBoard = b.dataset.cboard; S.room = null; S.roomSettings = false; renderChats(); }); }
-document.addEventListener("click", e => { const r = e.target.closest("[data-room]"); if (r) { S.room = r.dataset.room; S.roomSettings = false; renderChats(); } });
+document.addEventListener("click", e => { const r = e.target.closest("[data-room]"); if (r) { S.room = S.room === r.dataset.room ? null : r.dataset.room; S.roomSettings = false; renderChats(); } }); // tapping the open chat again closes it
 
 function roomSettingsHTML(r) {
   const mem = myMember(r) || {};
@@ -721,7 +721,7 @@ async function renderDMs() {
   if (room) wireSend("dm", room, renderDMs, { blur: false, note: "Private message. Faces stay visible. Tap anything you want blurred." });
 }
 document.addEventListener("click", async e => {
-  const d = e.target.closest("[data-dm]"); if (d) { S.dm = d.dataset.dm; renderDMs(); return; }
+  const d = e.target.closest("[data-dm]"); if (d) { S.dm = S.dm === d.dataset.dm ? null : d.dataset.dm; renderDMs(); return; }
   const f = e.target.closest("[data-follow]"); if (f) { await follow(f.dataset.follow, true); if (S.view === "dms") renderDMs(); return; }
 });
 async function follow(id, on) {
