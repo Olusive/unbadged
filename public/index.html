@@ -360,6 +360,20 @@ html[data-holiday] .navbtn .nlabel{font-family:var(--hfont),var(--f-display);fon
 html[data-holiday] .navbtn[aria-current="page"] .nlabel{filter:brightness(1.15) saturate(1.2)}
 html[data-holiday] .holibanner{font-family:var(--hfont),var(--f-body);font-weight:var(--hwt,400);font-size:15px}
 @media (max-width:720px){.tabs .hico{font-size:20px;width:24px;height:24px}html[data-holiday] .tabs .navbtn .nlabel{font-size:13px}}
+#holiFw{position:fixed;inset:0;width:100vw;height:100vh;z-index:-1;pointer-events:none}
+.celebrate{position:fixed;inset:0;pointer-events:none;z-index:70;overflow:hidden}
+canvas.celebrate{width:100vw;height:100vh}
+.cglyph{position:absolute;line-height:1;will-change:transform;white-space:nowrap}
+.reacts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.rchip{border:1px solid var(--line);background:var(--surface-2);border-radius:999px;padding:2px 9px;font-size:13px;color:var(--ink);cursor:pointer;display:inline-flex;gap:4px;align-items:center}
+.rchip b{font-family:var(--f-mono);font-size:12px;font-weight:500}
+.rchip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.rpick{display:flex;gap:2px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:3px 6px;width:max-content;max-width:100%}
+.rpick button{border:0;background:transparent;font-size:20px;padding:3px 6px;border-radius:999px;cursor:pointer;transition:transform .12s}
+.rpick button:hover{transform:scale(1.25)}
+.rpick button[aria-pressed="true"]{background:var(--accent-soft)}
+.act[aria-pressed="true"]{color:var(--accent)}
+.post.focus{box-shadow:0 0 0 2px var(--accent)}
 .mobonly{display:none}
 .mobrail{display:none}
 @media (max-width:1060px){.mobrail{display:block;margin-bottom:14px}}
@@ -524,9 +538,10 @@ html[data-holiday] .holibanner{font-family:var(--hfont),var(--f-body);font-weigh
 <noscript><p style="padding:20px">Unbadged needs JavaScript turned on.</p></noscript>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/lib.js?v=1792087179"></script>
-<script src="/holidays.js?v=1792087179"></script>
-<script src="/terms.js?v=1792087179"></script>
-<script src="/main.js?v=1792087179"></script>
+<script src="/lib.js?v=1792087814"></script>
+<script src="/holidays.js?v=1792087814"></script>
+<script src="/celebrate.js?v=1792087814"></script>
+<script src="/terms.js?v=1792087814"></script>
+<script src="/main.js?v=1792087814"></script>
 </body>
 </html>

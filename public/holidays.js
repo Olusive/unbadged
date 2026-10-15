@@ -13,7 +13,7 @@ const HOLI = {
   memorial:     { fed: 1, name: "Memorial Day", accent: "#e5484d", c1: "#1d2f55", c2: "#4a1d24", deco: ["🇺🇸", "🎖️"], pre: "🇺🇸 Memorial Day in {d}", day: "🇺🇸 Memorial Day · Remembering those who gave everything", post: "🇺🇸 Remembering those who gave everything" , font: "Cinzel", wt: "700", menu: "linear-gradient(90deg,#ff6b6b,#ffffff,#6ea8ff)", icons: "🏠 💵 📜 🇺🇸 ✉️ 📻 🎖️ ⚙️".split(" ")},
   fathers:      { fed: 0, name: "Father's Day", accent: "#4c9aff", c1: "#1f3a5f", c2: "#2b3440", deco: ["👔", "🛠️", "🍔"], pre: "👔 Father's Day in {d}", day: "👔 Happy Father's Day", post: "👔 Happy Father's Day" , font: "Bebas Neue", wt: "400", menu: "linear-gradient(90deg,#a8d1ff,#4c9aff)", icons: "🏡 💵 🛠️ 🍔 👔 📻 👑 🔧".split(" ")},
   juneteenth:   { fed: 1, name: "Juneteenth", accent: "#ff5a4f", c1: "#1f4d2c", c2: "#5a1f1f", deco: ["⭐", "🎉"], fx: ["✦", "sparkle"], pre: "⭐ Juneteenth in {d}", day: "⭐ Happy Juneteenth · Freedom Day", post: "⭐ Happy Juneteenth" , font: "Righteous", wt: "400", menu: "linear-gradient(90deg,#ff5a4f,#ffd166,#3ddc84)", icons: "🏠 💵 📜 🎉 ✉️ 🎶 ⭐ ⚙️".split(" ")},
-  july4:        { fed: 1, name: "Independence Day", accent: "#ff4d4d", c1: "#1d3570", c2: "#6b1d2a", deco: ["🎆", "🇺🇸", "⭐"], fx: ["✦", "sparkle"], pre: "🎆 July 4th in {d}", day: "🎆 Happy Independence Day!", post: "🎆 Happy 4th!" , font: "Alfa Slab One", wt: "400", menu: "linear-gradient(90deg,#ff4d4d,#ffffff,#4d8bff)", icons: "🏡 💵 🗽 🎆 🎇 📻 🦅 🌭".split(" ")},
+  july4:        { fed: 1, name: "Independence Day", accent: "#ff4d4d", c1: "#1d3570", c2: "#6b1d2a", deco: ["🎆", "🇺🇸", "⭐"], fx: ["#ff4d4d,#ffffff,#4d8bff", "fireworks"], pre: "🎆 July 4th in {d}", day: "🎆 Happy Independence Day!", post: "🎆 Happy 4th!" , font: "Alfa Slab One", wt: "400", menu: "linear-gradient(90deg,#ff4d4d,#ffffff,#4d8bff)", icons: "🏡 💵 🗽 🎆 🎇 📻 🦅 🌭".split(" ")},
   labor:        { fed: 1, name: "Labor Day", accent: "#ff9f1c", c1: "#1f3a5f", c2: "#4a2f12", deco: ["🛠️", "👷", "⚙️"], pre: "🛠️ Labor Day in {d}", day: "🛠️ Happy Labor Day. This one's for you.", post: "🛠️ Hope you got the day off" , font: "Bebas Neue", wt: "400", menu: "linear-gradient(90deg,#ffd08a,#ff9f1c)", icons: "🏠 💵 🛠️ 👷 ✉️ 📻 👑 ⚙️".split(" ")},
   columbus:     { fed: 1, name: "Columbus Day / Indigenous Peoples' Day", accent: "#e07a2e", c1: "#4a2a12", c2: "#3a1f0f", deco: ["🍂", "🍁"], fx: ["🍂", "fall"], pre: "🍂 Columbus Day · Indigenous Peoples' Day in {d}", day: "🍂 Columbus Day · Indigenous Peoples' Day", post: "🍂 Happy fall, y'all" , font: "Bree Serif", wt: "400", menu: "linear-gradient(90deg,#ffc27a,#e07a2e,#c1440e)", icons: "🏡 💵 🍁 🍂 ✉️ 📻 👑 🍎".split(" ")},
   halloween:    { fed: 1, name: "Halloween", accent: "#ff7b1a", c1: "#3a1550", c2: "#4a1f05", deco: ["🎃", "🦇", "👻"], fx: ["🦇", "rise"], pre: "🎃 Halloween in {d}", day: "🎃 Happy Halloween!", post: "🎃 Hope you got the good candy" , font: "Creepster", wt: "400", menu: "linear-gradient(90deg,#ffa24c,#ff7b1a,#b26bff)", icons: "🏚️ 🍬 🪦 👻 🦇 🎃 🧛 🕸️".split(" ")},
@@ -70,6 +70,8 @@ function holidayTile(deco) {
 function holidayFx(fx) {
   let box = document.getElementById("holiFx");
   if (box) box.remove();
+  if (typeof backgroundFireworks === "function") backgroundFireworks(fx && fx[1] === "fireworks" ? fx[0].split(",") : null);
+  if (fx && fx[1] === "fireworks") return;
   if (!fx || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const [glyph, mode] = fx, n = innerWidth < 720 ? 12 : 22;
   box = document.createElement("div"); box.id = "holiFx"; box.setAttribute("aria-hidden", "true");

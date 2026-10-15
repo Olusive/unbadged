@@ -272,7 +272,14 @@ async function enrichPosts(list) {
     ]);
     cms = c.data || []; vts = v.data || [];
   }
+  let rx = [], sv = [];
+  if (ids.length) {
+    const [r, s2] = await Promise.all([sb.from("post_reactions").select("post_id,user_id,emoji").in("post_id", ids), sb.from("saved_posts").select("post_id").in("post_id", ids)]);
+    rx = r.data || []; sv = (s2.data || []).map(x => x.post_id);
+  }
   list.forEach(p => {
+    p.reacts = {}; p.myReacts = new Set(); p.saved = sv.includes(p.id);
+    rx.filter(x => x.post_id === p.id && !S.blocks.user.has(x.user_id)).forEach(x => { p.reacts[x.emoji] = (p.reacts[x.emoji] || 0) + 1; if (isMe(x.user_id)) p.myReacts.add(x.emoji); });
     p.comments = cms.filter(c => c.post_id === p.id);
     const pv = vts.filter(v => v.post_id === p.id);
     p.score = pv.reduce((a, v) => a + v.value, 0);
@@ -289,9 +296,35 @@ async function loadUserPosts(id) {
   const { data } = await sb.from("posts").select("id,user_id,board,title,body,strong,img_path,created_at").eq("user_id", id).order("created_at", { ascending: false }).limit(60);
   S.uPosts = await enrichPosts(data || []); S.uPostsFor = id;
 }
-const findPost = id => S.posts.find(x => x.id == id) || (S.uPosts || []).find(x => x.id == id);
-async function reloadPosts() { if (S.view === "profile") { await loadUserPosts(S.profileId); S.feedLoaded = false; } else await loadFeed(); }
-const rerenderPosts = () => S.view === "profile" ? renderProfile() : renderHome();
+const allPostLists = () => [S.posts, S.uPosts || [], S.savedList || [], S.onePost ? [S.onePost] : []];
+const findPost = id => { for (const l of allPostLists()) { const p = l.find(x => x.id == id); if (p) return p; } };
+const syncPost = p => allPostLists().forEach(l => l.forEach(q => { if (q !== p && q.id === p.id) Object.assign(q, { score: p.score, my: p.my, reacts: { ...p.reacts }, myReacts: new Set(p.myReacts), saved: p.saved }); }));
+async function loadSaved() {
+  const { data } = await sb.from("saved_posts").select("post_id,created_at").order("created_at", { ascending: false }).limit(100);
+  const ids = (data || []).map(x => x.post_id);
+  if (!ids.length) { S.savedList = []; return; }
+  const { data: posts } = await sb.from("posts").select("id,user_id,board,title,body,strong,img_path,created_at").in("id", ids);
+  S.savedList = await enrichPosts((posts || []).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)));
+}
+async function loadOnePost(id) {
+  const { data } = await sb.from("posts").select("id,user_id,board,title,body,strong,img_path,created_at").eq("id", id).maybeSingle();
+  if (data && !S.profiles.has(data.user_id)) await loadProfiles();
+  S.onePost = data ? (await enrichPosts([data]))[0] : null;
+}
+async function reloadPosts() {
+  if (S.view === "profile") { await loadUserPosts(S.profileId); S.feedLoaded = false; }
+  else if (S.view === "post") { await loadOnePost(S.onePostId); S.feedLoaded = false; }
+  else if (S.filter === "Saved") { await loadSaved(); S.feedLoaded = false; }
+  else await loadFeed();
+}
+const rerenderPosts = () => S.view === "profile" ? renderProfile() : S.view === "post" ? renderOnePost() : renderHome();
+async function renderOnePost() {
+  if (!S.onePost || S.onePost.id !== S.onePostId) await loadOnePost(S.onePostId);
+  const p = S.onePost; S.openC = p ? p.id : null;
+  $("#main").innerHTML = `<div class="col"><button class="act" id="opBack" style="align-self:flex-start">← Back to feed</button>
+   ${p && !S.blocks.user.has(p.user_id) ? postHTML(p) : '<div class="card" style="padding:20px"><b>That post isn\u2019t available</b><p class="muted" style="margin:6px 0 0">It may have been deleted or removed.</p></div>'}</div>`;
+  $("#opBack").onclick = () => { location.hash = ""; go("home"); };
+}
 async function loadShift() {
   const [r, m] = await Promise.all([sb.rpc("shift_results"), sb.from("shift_answers").select("choice").eq("day", chicagoDay()).maybeSingle()]);
   const counts = [0, 0, 0, 0]; (r.data || []).forEach(x => counts[x.choice] = Number(x.n));
@@ -375,6 +408,13 @@ function shiftReportHTML() {
     : `<div class="bars">${POLL.opts.map((o, i) => { const pc = tot ? Math.round(S.shift.counts[i] / tot * 100) : 0; return `<div class="barrow ${i === S.shift.mine ? "mine" : ""}"><span>${o}${i === S.shift.mine ? " · you" : ""}</span><span class="mono">${pc}%</span><i style="width:${pc}%"></i></div>`; }).join("")}</div>`}
   </div>`;
 }
+const REACTS = ["😂", "💯", "🔥", "😡", "😢", "🫡"];
+function reactRow(p) {
+  const has = REACTS.filter(e => (p.reacts || {})[e]);
+  const chips = has.map(e => `<button class="rchip" data-react="${p.id}" data-emoji="${e}" aria-pressed="${p.myReacts && p.myReacts.has(e)}" aria-label="${e} ${p.reacts[e]}">${e}<b>${p.reacts[e]}</b></button>`).join("");
+  const picker = S.pickFor === p.id ? `<div class="rpick" role="group" aria-label="Pick a reaction">${REACTS.map(e => `<button data-react="${p.id}" data-emoji="${e}" aria-pressed="${p.myReacts && p.myReacts.has(e)}">${e}</button>`).join("")}</div>` : "";
+  return chips || picker ? `<div class="reacts">${chips}${picker}</div>` : "";
+}
 function postHTML(p) {
   const pic = p.img_path ? `<div class="pimg">${img(p.img_path, "Photo posted by " + P(p.user_id).username)}</div>` : "";
   const inner = `<h3>${T(p.title)}</h3>${p.body ? `<p>${T(p.body)}</p>` : ""}${pic}`;
@@ -384,7 +424,8 @@ function postHTML(p) {
    <div class="pbody">
     <div class="meta">${AV(p.user_id, "sm")}<span class="board">${esc(p.board)}</span>${UL(p.user_id)}${P(p.user_id).company ? `<span class="co">${esc(P(p.user_id).company)}</span>` : ""}${p.strong ? '<span class="r18">LANGUAGE</span>' : ""}<span>· ${ago(p.created_at)}</span></div>
     ${inner}
-    <div class="actions"><button class="act" data-cmt="${p.id}">💬 ${coms.length} comment${coms.length === 1 ? "" : "s"}</button>
+    ${reactRow(p)}
+    <div class="actions"><button class="act" data-cmt="${p.id}">💬 ${coms.length} comment${coms.length === 1 ? "" : "s"}</button><button class="act" data-rpick="${p.id}" aria-expanded="${S.pickFor === p.id}">☺ React</button><button class="act" data-save="${p.id}" aria-pressed="${!!p.saved}">🔖 ${p.saved ? "Saved" : "Save"}</button><button class="act" data-share="${p.id}">↗ Share</button>
      ${isMe(p.user_id) ? `<button class="act" data-delpost="${p.id}">Delete</button>` : `<button class="act" data-rpt='${esc(JSON.stringify({ kind: "post", name: P(p.user_id).username, id: p.id }))}'>⚑ Report</button>`}
      ${owner() && !isMe(p.user_id) ? `<button class="act" data-oremove="${p.id}">Remove (owner)</button>` : ""}</div>
     <div class="comments" id="c${p.id}" ${S.openC === p.id ? "" : "hidden"}>${coms.map(c => `<div class="cmt"><div class="who2">${AV(c.user_id, "sm")}${UL(c.user_id)}<span class="fine">${ago(c.created_at)}</span></div><div>${T(c.body)}</div></div>`).join("")}
@@ -393,14 +434,15 @@ function postHTML(p) {
 }
 async function renderHome() {
   if (!S.feedLoaded) { await Promise.all([loadFeed(), loadShift()]); S.feedLoaded = true; }
-  const filters = ["All", ...[...S.joined].filter(x => !S.blocks.board.has(x))];
-  const list = S.posts.filter(p => !S.blocks.user.has(p.user_id) && !S.blocks.board.has(p.board) && (S.filter === "All" || p.board === S.filter) && !(S.hideLang && p.strong && !isMe(p.user_id)));
+  const filters = ["All", ...[...S.joined].filter(x => !S.blocks.board.has(x)), "Saved"];
+  if (S.filter === "Saved" && !S.savedList) await loadSaved();
+  const list = (S.filter === "Saved" ? S.savedList || [] : S.posts).filter(p => !S.blocks.user.has(p.user_id) && !S.blocks.board.has(p.board) && (S.filter === "All" || S.filter === "Saved" || p.board === S.filter) && !(S.hideLang && p.strong && !isMe(p.user_id)));
   const boardOpts = S.boards.filter(b => !b.locked && !S.blocks.board.has(b.id));
-  const def = S.filter !== "All" ? S.filter : [...S.joined][0];
+  const def = S.filter !== "All" && S.filter !== "Saved" ? S.filter : [...S.joined][0];
   $("#main").innerHTML = `<div class="col">
-   <div class="viewhead"><h1>${S.filter === "All" ? "Your feed" : esc(S.filter)}</h1><span class="muted" style="font-size:13px">Posting as <span class="mono">${esc(P(S.uid).username)}</span></span></div>
-   ${S.filter !== "All" ? `<div class="row boardbar"><span class="fine">Viewing ${esc(S.filter)}</span><span style="flex:1"></span><button class="act" data-rpt='${esc(JSON.stringify({ kind: "board", name: S.filter }))}'>⚑ Report board</button><button class="act" data-bboard="${esc(S.filter)}">⊘ Block board</button></div>` : ""}
-   <div class="chips">${filters.map(f => `<button class="chip" data-filter="${esc(f)}" aria-pressed="${S.filter === f}">${esc(f)}</button>`).join("")}</div>
+   <div class="viewhead"><h1>${S.filter === "All" ? "Your feed" : S.filter === "Saved" ? "Saved posts" : esc(S.filter)}</h1><span class="muted" style="font-size:13px">Posting as <span class="mono">${esc(P(S.uid).username)}</span></span></div>
+   ${S.filter !== "All" && S.filter !== "Saved" ? `<div class="row boardbar"><span class="fine">Viewing ${esc(S.filter)}</span><span style="flex:1"></span><button class="act" data-rpt='${esc(JSON.stringify({ kind: "board", name: S.filter }))}'>⚑ Report board</button><button class="act" data-bboard="${esc(S.filter)}">⊘ Block board</button></div>` : ""}
+   <div class="chips">${filters.map(f => `<button class="chip" data-filter="${esc(f)}" aria-pressed="${S.filter === f}">${f === "Saved" ? "🔖 Saved" : esc(f)}</button>`).join("")}</div>
    <div id="mobBrk" class="mobrail">${breakHTML()}</div>
    ${shiftReportHTML()}
    <div class="card composer">
@@ -430,11 +472,12 @@ async function renderHome() {
       const { error } = await sb.from("posts").insert({ board: $("#draftBoard").value, title: title.slice(0, 200), body: rest.join("\n").trim(), strong: $("#draft18").checked, img_path });
       if (error) throw error;
       S.draftImg = null; await loadFeed(); renderHome(); toast("Posted");
+      celebrate($("#postBtn")); // the only place a celebration plays
     } catch (e) { busy(pb, false); toast(errMsg(e)); }
   };
 }
 document.addEventListener("click", async e => {
-  const f = e.target.closest("[data-filter]"); if (f) { S.filter = f.dataset.filter; renderHome(); return; }
+  const f = e.target.closest("[data-filter]"); if (f) { S.filter = f.dataset.filter; if (S.filter === "Saved") S.savedList = null; renderHome(); return; }
   const pl = e.target.closest("[data-poll]");
   if (pl) { const { error } = await sb.from("shift_answers").insert({ choice: +pl.dataset.poll }); if (error) toast(errMsg(error)); await loadShift(); renderHome(); toast("Counted. Come back tomorrow for a new question."); return; }
   const v = e.target.closest("[data-vote]");
@@ -443,6 +486,30 @@ document.addEventListener("click", async e => {
     const res = p.my === n ? await sb.from("votes").delete().eq("post_id", p.id).eq("user_id", S.uid) : await sb.from("votes").upsert({ post_id: p.id, user_id: S.uid, value: n });
     if (res.error) { toast(errMsg(res.error)); return; }
     p.score += (p.my === n ? -n : n - p.my); p.my = p.my === n ? 0 : n; const q = S.posts.find(x => x.id === p.id); if (q && q !== p) { q.score = p.score; q.my = p.my; } rerenderPosts(); return;
+  }
+  const rp2 = e.target.closest("[data-rpick]"); if (rp2) { S.pickFor = S.pickFor === +rp2.dataset.rpick ? null : +rp2.dataset.rpick; rerenderPosts(); return; }
+  const rx = e.target.closest("[data-react]");
+  if (rx) {
+    const p = findPost(rx.dataset.react), em = rx.dataset.emoji, on = !p.myReacts.has(em);
+    const { error } = on ? await sb.from("post_reactions").insert({ post_id: p.id, emoji: em }) : await sb.from("post_reactions").delete().eq("post_id", p.id).eq("user_id", S.uid).eq("emoji", em);
+    if (error && !/duplicate/.test(error.message)) { toast(errMsg(error)); return; }
+    if (on) { p.myReacts.add(em); p.reacts[em] = (p.reacts[em] || 0) + 1; } else { p.myReacts.delete(em); p.reacts[em] = Math.max(0, (p.reacts[em] || 1) - 1); }
+    S.pickFor = null; syncPost(p); rerenderPosts(); return;
+  }
+  const sv = e.target.closest("[data-save]");
+  if (sv) {
+    const p = findPost(sv.dataset.save), on = !p.saved;
+    const { error } = on ? await sb.from("saved_posts").insert({ post_id: p.id }) : await sb.from("saved_posts").delete().eq("post_id", p.id).eq("user_id", S.uid);
+    if (error && !/duplicate/.test(error.message)) { toast(errMsg(error)); return; }
+    p.saved = on; syncPost(p); if (!on && S.filter === "Saved") S.savedList = (S.savedList || []).filter(x => x.id !== p.id);
+    rerenderPosts(); toast(on ? "Saved. Find it under 🔖 Saved on Home." : "Removed from saved"); return;
+  }
+  const sh = e.target.closest("[data-share]");
+  if (sh) {
+    const p = findPost(sh.dataset.share), url = `${location.origin}/#post=${p.id}`, text = `"${p.title.slice(0, 80)}" on Unbadged`;
+    try { if (navigator.share) { await navigator.share({ title: "Unbadged", text, url }); return; } } catch (er) { if (er && er.name === "AbortError") return; }
+    try { await navigator.clipboard.writeText(url); toast("Link copied. Only Unbadged members can open it."); } catch (er) { prompt("Copy this link:", url); }
+    return;
   }
   const c = e.target.closest("[data-cmt]"); if (c) { const el = $("#c" + c.dataset.cmt); el.hidden = !el.hidden; S.openC = el.hidden ? null : +c.dataset.cmt; return; }
   const rp = e.target.closest("[data-reply]");
@@ -972,6 +1039,7 @@ function renderSettings() {
    <div class="card setcard"><span class="eyebrow">Appearance</span><span class="setlabel">Accent color</span>
     <div class="swatches">${ACCENTS.map(([n, c]) => `<button class="swatch" role="radio" aria-checked="${S.accent === c}" data-accent="${c}" title="${n}" style="background:${c}"><span>${n}</span></button>`).join("")}</div>
     ${holidayNow && !S.holidayPreview ? `<span class="fine">The ${esc(HOLI[holidayNow.key].name)} theme is using its own color right now. Yours comes back when the holiday ends.</span>` : ""}
+    ${sw("sCheer", store.get("celebrateSound", true), "Post celebration sound", "When you post from Home, a little celebration plays to match the holiday. This turns its sound on or off.")}
     ${sw("sHoliday", store.get("holidays", true), "Holiday themes", "The app dresses up for holidays: new colors, a festive background, and a banner. Federal holidays start 3 weeks early; others start 1 week early.")}
     ${owner() ? `<span class="setlabel">Preview a holiday (only you see this)</span><select id="sHoliPrev"><option value="">Off, follow the calendar</option>${Object.entries(HOLI).map(([k, t]) => `<option value="${k}" ${S.holidayPreview === k ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select>` : ""}</div>
    <div class="card setcard"><span class="eyebrow">Devices</span>
@@ -1022,6 +1090,7 @@ function renderSettings() {
   if ($("#lCancel")) $("#lCancel").onclick = () => { S.linkCode = null; renderSettings(); };
   if ($("#qrBox")) drawQR($("#qrBox"), location.origin + "/#link=" + S.linkCode.replace("-", ""));
   $("#sProf").onchange = e => { S.prof = e.target.checked; store.set("prof", S.prof); };
+  $("#sCheer").onchange = e => store.set("celebrateSound", e.target.checked);
   $("#sHoliday").onchange = e => { store.set("holidays", e.target.checked); S.holidayPreview = null; applyHoliday(); renderSettings(); };
   if ($("#sHoliPrev")) $("#sHoliPrev").onchange = e => { S.holidayPreview = e.target.value || null; applyHoliday(S.holidayPreview); renderSettings(); };
   document.querySelectorAll("[data-flist]").forEach(b => b.onclick = () => followListModal(b.dataset.flist));
@@ -1346,7 +1415,7 @@ function startLive() {
 /* ---------- render & boot ---------- */
 async function render() {
   renderNav();
-  const views = { home: renderHome, pay: renderPay, boards: renderBoards, chats: renderChats, dms: renderDMs, settings: renderSettings, owner: renderOwner, terms: renderTerms, profile: renderProfile, radio: renderRadio };
+  const views = { home: renderHome, pay: renderPay, boards: renderBoards, chats: renderChats, dms: renderDMs, settings: renderSettings, owner: renderOwner, terms: renderTerms, profile: renderProfile, radio: renderRadio, post: renderOnePost };
   try { await (views[S.view] || renderHome)(); } catch (e) { console.error(e); toast("Couldn't load that. Check your connection and try again."); }
   drawRail();
 }
@@ -1366,6 +1435,7 @@ async function boot() {
   if (me.banned) { $("#main").innerHTML = `<div class="col"><div class="card" style="padding:20px"><b>This account has been banned</b><p class="muted">It broke the house rules. If you think this is a mistake, contact the email in the Closed Beta Terms.</p></div></div>`; renderNav(); return; }
   await Promise.all([loadSocial(), loadBoards(), loadUnread()]);
   $("#onb").hidden = true;
+  const pm = location.hash.match(/post=(\d+)/); if (pm) { S.onePostId = +pm[1]; S.view = "post"; }
   S.feedLoaded = false; await render(); paintUnread(); startLive();
 }
 boot();
