@@ -222,3 +222,7 @@ where not exists (select 1 from public.rooms r where r.kind = 'public' and r.boa
 
 -- board chats are only visible to members of that board (and anyone already in the chat)
 alter policy rooms_read on public.rooms using ((kind = 'public' and (board is null or public.in_board(board))) or public.is_member(id));
+
+-- (applied separately) photo-only posts: a post needs a title or a photo
+-- alter table public.posts drop constraint posts_title_check;
+-- alter table public.posts add constraint posts_title_check check (char_length(title) <= 200 and (char_length(title) >= 1 or img_path is not null));

@@ -417,7 +417,7 @@ function reactRow(p) {
 }
 function postHTML(p) {
   const pic = p.img_path ? `<div class="pimg">${img(p.img_path, "Photo posted by " + P(p.user_id).username)}</div>` : "";
-  const inner = `<h3>${T(p.title)}</h3>${p.body ? `<p>${T(p.body)}</p>` : ""}${pic}`;
+  const inner = `${p.title ? `<h3>${T(p.title)}</h3>` : ""}${p.body ? `<p>${T(p.body)}</p>` : ""}${pic}`;
   const coms = p.comments.filter(c => !S.blocks.user.has(c.user_id));
   return `<article class="card post" data-id="${p.id}">
    <div class="votes"><button class="up" aria-label="Upvote" aria-pressed="${p.my === 1}" data-vote="1">▲</button><span class="n">${p.score}</span><button class="down" aria-label="Downvote" aria-pressed="${p.my === -1}" data-vote="-1">▼</button></div>
@@ -446,7 +446,7 @@ async function renderHome() {
    <div id="mobBrk" class="mobrail">${breakHTML()}</div>
    ${shiftReportHTML()}
    <div class="card composer">
-    <textarea id="draft" maxlength="5000" placeholder="What happened on shift? First line is the title. Vent about the job, not specific people."></textarea>
+    <textarea id="draft" maxlength="5000" placeholder="What happened on shift? First line is the title, or just add a photo. Vent about the job, not specific people."></textarea>
     <div class="warn" id="draftWarn" hidden></div>
     <div class="preview" id="draftPrev" hidden></div>
     <div class="row">
@@ -464,8 +464,8 @@ async function renderHome() {
   const usePhoto = url => { S.draftImg = url; const pr = $("#draftPrev"); pr.hidden = false; pr.innerHTML = `<div class="row"><img src="${url}" alt="Your photo"><span class="okchip">✓ Passed photo check</span><button class="btn small" id="rmImg">Remove</button></div>`; $("#rmImg").onclick = () => { S.draftImg = null; pr.hidden = true; }; };
   $("#draftFile").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) processPhoto(f, { blur: true, note: "Public post. Faces are always blurred." }, usePhoto); };
   pb.onclick = async () => {
-    const txt = d.value.trim(); if (!txt) { toast("Write something first. The first line is the title."); return; }
-    const [title, ...rest] = txt.split("\n");
+    const txt = d.value.trim(); if (!txt && !S.draftImg) { toast("Write something or add a photo first."); return; }
+    const [title, ...rest] = txt ? txt.split("\n") : [""]; // a photo can post on its own
     busy(pb, true, "Posting…");
     try {
       const img_path = S.draftImg ? await uploadPhoto(S.draftImg) : null;
@@ -506,7 +506,7 @@ document.addEventListener("click", async e => {
   }
   const sh = e.target.closest("[data-share]");
   if (sh) {
-    const p = findPost(sh.dataset.share), url = `${location.origin}/#post=${p.id}`, text = `"${p.title.slice(0, 80)}" on Unbadged`;
+    const p = findPost(sh.dataset.share), url = `${location.origin}/#post=${p.id}`, text = p.title ? `"${p.title.slice(0, 80)}" on Unbadged` : "A photo on Unbadged";
     try { if (navigator.share) { await navigator.share({ title: "Unbadged", text, url }); return; } } catch (er) { if (er && er.name === "AbortError") return; }
     try { await navigator.clipboard.writeText(url); toast("Link copied. Only Unbadged members can open it."); } catch (er) { prompt("Copy this link:", url); }
     return;
