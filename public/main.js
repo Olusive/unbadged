@@ -64,8 +64,10 @@ function nameProblem(n, allowReserved) {
   if (new RegExp(PROF.source, "i").test(n.replace(/_/g, " "))) return "Pick a username without swear words.";
   return null;
 }
-function setAccent(c) { S.accent = c; document.documentElement.style.setProperty("--accent", c); store.set("accent", c); }
+function setAccent(c) { S.accent = c; if (!holidayNow) document.documentElement.style.setProperty("--accent", c); store.set("accent", c); }
 setAccent(store.get("accent", "#ff7b30"));
+applyHoliday();
+setInterval(() => { if (!S.holidayPreview) applyHoliday(); }, 3600e3); // roll themes over at the right day
 
 /* ---------- photos: signed links, upload ---------- */
 async function signUrls(paths) {
@@ -966,7 +968,10 @@ function renderSettings() {
     ${sw("sBetaAv", me.show_beta_av, "Show beta tester avatar", me.avatar_path ? "Your profile photo shows inside the beta ring." : "Replaces your icon with the beta avatar.")}
     ${sw("sBetaTag", me.show_beta_tag, "Show BETA TESTER tag", "Shows next to your username everywhere.")}</div>` : ""}
    <div class="card setcard"><span class="eyebrow">Appearance</span><span class="setlabel">Accent color</span>
-    <div class="swatches">${ACCENTS.map(([n, c]) => `<button class="swatch" role="radio" aria-checked="${S.accent === c}" data-accent="${c}" title="${n}" style="background:${c}"><span>${n}</span></button>`).join("")}</div></div>
+    <div class="swatches">${ACCENTS.map(([n, c]) => `<button class="swatch" role="radio" aria-checked="${S.accent === c}" data-accent="${c}" title="${n}" style="background:${c}"><span>${n}</span></button>`).join("")}</div>
+    ${holidayNow && !S.holidayPreview ? `<span class="fine">The ${esc(HOLI[holidayNow.key].name)} theme is using its own color right now. Yours comes back when the holiday ends.</span>` : ""}
+    ${sw("sHoliday", store.get("holidays", true), "Holiday themes", "The app dresses up for holidays: new colors, a festive background, and a banner. Federal holidays start 3 weeks early; others start 1 week early.")}
+    ${owner() ? `<span class="setlabel">Preview a holiday (only you see this)</span><select id="sHoliPrev"><option value="">Off, follow the calendar</option>${Object.entries(HOLI).map(([k, t]) => `<option value="${k}" ${S.holidayPreview === k ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select>` : ""}</div>
    <div class="card setcard"><span class="eyebrow">Devices</span>
     <div class="devrow"><span>📱 <b>This device</b></span><span class="okchip">Signed in now</span></div>
     ${S.linkCode && Date.now() < S.linkExp ? `<div class="linkbox"><div class="qr" id="qrBox"></div><span class="setlabel" style="text-align:center">Or type this code on the other device</span><div class="lcode mono">${S.linkCode}</div>
@@ -1015,6 +1020,8 @@ function renderSettings() {
   if ($("#lCancel")) $("#lCancel").onclick = () => { S.linkCode = null; renderSettings(); };
   if ($("#qrBox")) drawQR($("#qrBox"), location.origin + "/#link=" + S.linkCode.replace("-", ""));
   $("#sProf").onchange = e => { S.prof = e.target.checked; store.set("prof", S.prof); };
+  $("#sHoliday").onchange = e => { store.set("holidays", e.target.checked); S.holidayPreview = null; applyHoliday(); renderSettings(); };
+  if ($("#sHoliPrev")) $("#sHoliPrev").onchange = e => { S.holidayPreview = e.target.value || null; applyHoliday(S.holidayPreview); renderSettings(); };
   document.querySelectorAll("[data-flist]").forEach(b => b.onclick = () => followListModal(b.dataset.flist));
   const betaSw = (id, col) => { const el = $(id); if (el) el.onchange = async e => { const v = e.target.checked; const { error } = await sb.from("profiles").update({ [col]: v }).eq("id", S.uid); if (error) { toast(errMsg(error)); e.target.checked = !v; return; } me[col] = v; renderNav(); renderSettings(); }; };
   betaSw("#sBetaAv", "show_beta_av"); betaSw("#sBetaTag", "show_beta_tag");
