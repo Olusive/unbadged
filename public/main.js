@@ -244,15 +244,22 @@ async function loadSocial() {
   (b.data || []).forEach(r => S.blocks[r.kind] && S.blocks[r.kind].add(r.target));
 }
 async function loadBoards() {
-  const { data } = await sb.from("boards").select("*").order("sort");
+  const [{ data }, mine] = await Promise.all([sb.from("boards").select("*").order("sort"), sb.from("board_members").select("board")]);
   S.boards = data || [];
-  const saved = store.get("joined:" + S.uid, null);
-  if (saved) S.joined = new Set(saved);
-  else {
-    const me = P(S.uid), co = S.boards.find(b => b.id.toLowerCase() === ("b/" + (me.company || "").replace(/\s+/g, "")).toLowerCase());
-    S.joined = new Set([...(co ? [co.id] : []), "b/NightShift", "b/Retail"]);
-    store.set("joined:" + S.uid, [...S.joined]);
-  }
+  if (!mine.error && (mine.data || []).length) { S.joined = new Set(mine.data.map(r => r.board)); return; }
+  // first time on the server: bring over this phone's boards, or start with sensible defaults
+  const me = P(S.uid), co = S.boards.find(b => b.id.toLowerCase() === ("b/" + (me.company || "").replace(/\s+/g, "")).toLowerCase());
+  const start = store.get("joined:" + S.uid, null) || [...(co ? [co.id] : []), "b/NightShift", "b/Retail"];
+  S.joined = new Set(start.filter(id => S.boards.some(b => b.id === id)));
+  if (!mine.error && S.joined.size) await sb.from("board_members").insert([...S.joined].map(board => ({ board })));
+}
+async function joinBoard(id, on) {
+  const { error } = on ? await sb.from("board_members").insert({ board: id }) : await sb.from("board_members").delete().eq("board", id).eq("user_id", S.uid);
+  if (error && !/duplicate/.test(error.message)) { toast(errMsg(error)); return false; }
+  on ? S.joined.add(id) : S.joined.delete(id);
+  const chat = S.rooms.find(r => r.kind === "public" && r.board === id);
+  if (!on && chat) { S.members.set(chat.id, (S.members.get(chat.id) || []).filter(m => !isMe(m.user_id))); S.unread.delete(chat.id); paintUnread(); }
+  return true;
 }
 async function enrichPosts(list) {
   const ids = list.map(p => p.id);
@@ -301,7 +308,7 @@ const ubadge = (roomId, n) => `<span class="ubadge" data-ub="${roomId}" ${n ? ""
 function paintUnread() {
   renderNav();
   document.querySelectorAll("[data-ub]").forEach(el => { const u = S.unread.get(el.dataset.ub), n = u ? u.n : 0; el.hidden = !n; el.textContent = n > 99 ? "99+" : n; });
-  const t = unreadTotal("group") + unreadTotal("dm"); document.title = t ? `(${t}) Unbadged` : "Unbadged";
+  const t = unreadTotal("group") + unreadTotal("public") + unreadTotal("dm"); document.title = t ? `(${t}) Unbadged` : "Unbadged";
 }
 async function markRead(roomId) {
   const u = S.unread.get(roomId); if (!u) return;
@@ -336,7 +343,7 @@ document.addEventListener("visibilitychange", () => {
 const NAV = [["home", "Home", ICON.home], ["pay", "Pay Check", ICON.pay], ["boards", "Boards", ICON.boards], ["chats", "Chats", ICON.chat], ["dms", "Messages", ICON.dm], ["radio", "Radio", ICON.radio]];
 const SHORT = { pay: "Pay", dms: "DMs" };
 function renderNav() {
-  const b = ([id, label, ic]) => { const c = id === "chats" ? unreadTotal("group") : id === "dms" ? unreadTotal("dm") : 0; return `<button class="navbtn" data-view="${id}" ${S.view === id ? 'aria-current="page"' : ""}>${ic}<span>${label}</span>${c ? `<span class="count" aria-label="${c} unread">${c > 99 ? "99+" : c}</span>` : ""}</button>`; };
+  const b = ([id, label, ic]) => { const c = id === "chats" ? unreadTotal("group") + unreadTotal("public") : id === "dms" ? unreadTotal("dm") : 0; return `<button class="navbtn" data-view="${id}" ${S.view === id ? 'aria-current="page"' : ""}>${ic}<span>${label}</span>${c ? `<span class="count" aria-label="${c} unread">${c > 99 ? "99+" : c}</span>` : ""}</button>`; };
   $("#navMain").innerHTML = (owner() ? [...NAV, ["owner", "Owner tools", ICON.plus]] : NAV).map(b).join("");
   $("#tabs").innerHTML = (owner() ? [...NAV, ["owner", "Owner", ICON.plus]] : NAV).map(([id, l, ic]) => b([id, SHORT[id] || l, ic])).join("");
   $("#myBoards").innerHTML = [...S.joined].filter(x => !S.blocks.board.has(x)).map(x => `<button class="boardlink" data-board="${esc(x)}">${esc(x)}</button>`).join("");
@@ -524,7 +531,13 @@ function renderBoards() {
 }
 document.addEventListener("click", async e => {
   const j = e.target.closest("[data-join]");
-  if (j) { const id = j.dataset.join; S.joined.has(id) ? S.joined.delete(id) : S.joined.add(id); store.set("joined:" + S.uid, [...S.joined]); renderNav(); renderBoards(); return; }
+  if (j) {
+    const id = j.dataset.join, on = !S.joined.has(id); if (S.rooms.length === 0) await loadRooms();
+    const chat = S.rooms.find(r => r.kind === "public" && r.board === id), inChat = chat && myMember(chat);
+    if (!await joinBoard(id, on)) return;
+    renderNav(); renderBoards();
+    toast(on ? (chat ? `Joined ${id}. Its chat, ${chat.name}, is open to you now in Chats.` : `Joined ${id}`) : inChat ? `Left ${id} and its chat` : `Left ${id}`); return;
+  }
   const ol = e.target.closest("[data-olock]");
   if (ol) { const { error } = await sb.rpc("lock_board", { b: ol.dataset.olock, do_lock: ol.dataset.lock === "true" }); if (error) { toast(errMsg(error)); return; } await loadBoards(); renderBoards(); return; }
 });
@@ -561,6 +574,8 @@ async function loadRooms() {
   S.rooms = (data || []).filter(r => !S.blocks.room.has(r.id));
   const { data: mem } = await sb.from("room_members").select("room_id,user_id,role,muted,silenced");
   S.members = new Map(); (mem || []).forEach(m => { if (!S.members.has(m.room_id)) S.members.set(m.room_id, []); S.members.get(m.room_id).push(m); });
+  const rank = r => r.kind === "group" ? 0 : inRoom(r) ? 1 : S.joined.has(r.board) ? 2 : 3;
+  S.rooms.sort((a, b) => rank(a) - rank(b));
 }
 const myMember = r => (S.members.get(r.id) || []).find(m => isMe(m.user_id));
 const myRole = r => r.kind === "group" ? (myMember(r) || {}).role : null;
@@ -568,25 +583,28 @@ const isOwnerOf = r => myRole(r) === "owner";
 const isAdmin = r => ["admin", "owner"].includes(myRole(r));
 const canManage = (r, m) => !isMe(m.user_id) && (isOwnerOf(r) || (isAdmin(r) && m.role === "member"));
 const ROLE_TAG = { owner: '<span class="shift">Owner</span>', admin: '<span class="shift">Admin</span>', member: "" };
-const roomSub = r => r.kind === "group" ? `Private group · ${(S.members.get(r.id) || []).length} members${(myMember(r) || {}).muted ? " · notifications off" : ""}` : (r.board ? r.board + " · public room" : "Public room");
+const inRoom = r => !!myMember(r);
+const roomSub = r => r.kind === "public" ? `${r.board ? r.board + " · " : ""}${inRoom(r) ? `board chat · ${(S.members.get(r.id) || []).length} in it${(myMember(r) || {}).muted ? " · notifications off" : ""}` : S.joined.has(r.board) ? "board chat · tap to join" : "join the board to chat"}` : r.kind === "group" ? `Private group · ${(S.members.get(r.id) || []).length} members${(myMember(r) || {}).muted ? " · notifications off" : ""}` : (r.board ? r.board + " · public room" : "Public room");
 async function renderChats() {
   await loadRooms();
   if (!S.room || !S.rooms.find(r => r.id === S.room)) S.room = (S.rooms[0] || {}).id;
   const r = S.rooms.find(x => x.id === S.room);
   if (!r) { $("#main").innerHTML = `<div class="col"><h1>Group chats</h1><p class="muted">No rooms yet.</p></div>`; return; }
-  if (!S.roomSettings) { await loadMessages(r.id); if (S.unread.get(r.id)?.n) markRead(r.id); }
+  const locked = r.kind === "public" && !inRoom(r);
+  if (!S.roomSettings && !locked) { await loadMessages(r.id); if (S.unread.get(r.id)?.n) markRead(r.id); }
   else if (isAdmin(r)) { const { data } = await sb.from("room_bans").select("user_id").eq("room_id", r.id); S.roomBans = (data || []).map(x => x.user_id); if (S.roomBans.some(id => !S.profiles.has(id))) await loadProfiles(); }
   const silenced = (myMember(r) || {}).silenced;
   $("#main").innerHTML = `<div class="chatview"><div class="viewhead"><h1>Group chats</h1><button class="btn small primary" id="newGroup">+ New group chat</button></div>
-   <div class="card chatwrap"><div class="rooms">${S.rooms.map(x => `<button class="room" data-room="${x.id}" aria-current="${x.id === S.room}"><b>${x.kind === "group" ? "🔒 " : ""}${esc(x.name)}${ubadge(x.id, (S.unread.get(x.id) || {}).n || 0)}</b><small>${esc(roomSub(x))}</small></button>`).join("")}</div>
+   <div class="card chatwrap"><div class="rooms">${S.rooms.map(x => `<button class="room ${x.kind === "public" && !inRoom(x) ? "lockedroom" : ""}" data-room="${x.id}" aria-current="${x.id === S.room}"><b>${x.kind === "group" ? "🔒 " : ""}${esc(x.name)}${ubadge(x.id, (S.unread.get(x.id) || {}).n || 0)}</b><small>${esc(roomSub(x))}</small></button>`).join("")}</div>
    <div class="thread"><div class="threadhead"><div><h2>${esc(r.name)}</h2><span class="muted mono">${esc(roomSub(r))}</span></div>
     <button class="btn small" id="roomGear">${COG.replace("<svg", '<svg width="16" height="16" style="vertical-align:-3px"')} ${S.roomSettings ? "Back to chat" : "Settings"}</button></div>
-   ${S.roomSettings ? roomSettingsHTML(r) : `<div class="msgs">${(S.msgs.get(r.id) || []).map(msgHTML).join("") || '<div class="sysmsg">No messages in the last few days. Say something.</div>'}</div>${silenced ? '<div class="sendbar"><span class="fine">An admin muted you in this group. You can read messages but can’t send them.</span></div>' : sendBar("room")}`}
+   ${S.roomSettings ? roomSettingsHTML(r) : locked ? `<div class="lockpane"><b>${S.joined.has(r.board) ? "Join this chat" : `Members of ${esc(r.board)} only`}</b><span>${S.joined.has(r.board) ? "You're in " + esc(r.board) + ", so you can join its chat. Leave the board any time and you'll leave the chat too." : "This chat belongs to " + esc(r.board) + ". Join the board to chat here. If you leave the board later, you'll leave the chat too."}</span><button class="btn primary" id="rJoin">${S.joined.has(r.board) ? "Join chat" : "Join " + esc(r.board) + " and this chat"}</button></div>` : `<div class="msgs">${(S.msgs.get(r.id) || []).map(msgHTML).join("") || '<div class="sysmsg">No messages in the last few days. Say something.</div>'}</div>${silenced ? '<div class="sendbar"><span class="fine">An admin muted you in this group. You can read messages but can’t send them.</span></div>' : sendBar("room")}`}
    </div></div></div>`;
   $("#newGroup").onclick = newGroupModal;
   $("#roomGear").onclick = () => { S.roomSettings = !S.roomSettings; renderChats(); };
   const cur = document.querySelector('.room[aria-current="true"]'); if (cur) cur.scrollIntoView({ block: "nearest", inline: "nearest" });
   if (S.roomSettings) return wireRoomSettings(r);
+  if (locked) { $("#rJoin").onclick = async e => { busy(e.target, true, "Joining…"); if (r.board && !S.joined.has(r.board) && !await joinBoard(r.board, true)) { busy(e.target, false); return; } const { error } = await sb.rpc("join_room", { r: r.id }); if (error) { busy(e.target, false); toast(errMsg(error)); return; } await loadUnread(); renderNav(); renderChats(); toast("You joined " + r.name); }; return; }
   const pctx = r.kind === "group" && r.allow_faces ? { blur: false, note: "This group allows faces. Only its members can see photos." } : { blur: true, note: r.kind === "group" ? "Faces are blurred in this group. An admin can allow faces in settings." : "Public room. Faces are always blurred." };
   if (!silenced) wireSend("room", r.id, renderChats, pctx); else { const box = document.querySelector(".msgs"); if (box) box.scrollTop = box.scrollHeight; }
 }
@@ -595,8 +613,9 @@ document.addEventListener("click", e => { const r = e.target.closest("[data-room
 function roomSettingsHTML(r) {
   const mem = myMember(r) || {};
   if (r.kind !== "group") return `<div class="rset">
-   <div class="rsec"><span class="eyebrow">About this room</span><p style="margin:0;font-size:14px">Public room run by Unbadged. Everyone can read and post. Faces are always blurred and the house rules apply. Messages older than 7 days are hidden.</p></div>
-   <div class="rsec"><div class="row"><button class="btn small" id="rReport">⚑ Report room</button><button class="btn small" id="rBlock">⊘ Block room</button></div><div id="rConfirm" hidden></div></div></div>`;
+   <div class="rsec"><span class="eyebrow">About this chat</span><p style="margin:0;font-size:14px">The chat for ${esc(r.board || "everyone")}. Only members of the board can join. If you leave the board, you leave this chat too. Faces are always blurred, the house rules apply, and messages older than 7 days are hidden.</p></div>
+   ${inRoom(r) ? `<div class="rsec">${sw("rMute", mem.muted, "Mute notifications", "Just for you. No pop-ups or alerts, and it won't count toward your Chats badge.")}</div>` : ""}
+   <div class="rsec"><div class="row"><button class="btn small" id="rReport">⚑ Report chat</button>${inRoom(r) ? '<button class="btn small" id="rLeave">Leave chat</button>' : ""}<button class="btn small" id="rBlock">⊘ Block chat</button></div><div id="rConfirm" hidden></div></div></div>`;
   const adm = isAdmin(r), own = isOwnerOf(r), lock = adm ? "" : "disabled", ro = adm ? "" : '<span class="fine">Only admins can change this.</span>';
   const ord = { owner: 0, admin: 1, member: 2 };
   const people = [...(S.members.get(r.id) || [])].sort((a, b) => ord[a.role] - ord[b.role]).map(m => `<div class="mem memrow"><div class="row" style="gap:8px;flex-wrap:nowrap;min-width:0">${AV(m.user_id, "sm")}${UL(m.user_id)}${isMe(m.user_id) ? " (you)" : ""}${ROLE_TAG[m.role] || ""}${m.silenced ? '<span class="r18">Muted</span>' : ""}</div>
@@ -624,8 +643,9 @@ function wireRoomSettings(r) {
   const call = async (fn, args, msg) => { const { error } = await sb.rpc(fn, args); if (error) { toast(errMsg(error)); return false; } if (msg) toast(msg); await re(); return true; };
   const confirmBox = (msg, yes, act) => { const c = q("#rConfirm"); c.hidden = false; c.innerHTML = `<p style="margin:8px 0;font-size:14px">${msg}</p><div class="row"><button class="btn small" id="rNo">Cancel</button><button class="btn small dangerbtn" id="rYes">${yes}</button></div>`; q("#rNo").onclick = () => { c.hidden = true; }; q("#rYes").onclick = act; };
   q("#rReport").onclick = () => reportModal({ kind: r.kind === "group" ? "group" : "room", name: r.name, roomId: r.id });
-  q("#rBlock").onclick = () => confirmBox(r.kind === "group" ? "Leave and block this group? Nobody can add you back. Unblock it in Settings any time." : "Block this room? It disappears from your chats list.", r.kind === "group" ? "Leave and block" : "Block room", () => blockRoom(r));
-  if (r.kind !== "group") return;
+  q("#rBlock").onclick = () => confirmBox(r.kind === "group" ? "Leave and block this group? Nobody can add you back. Unblock it in Settings any time." : "Block this chat? You'll leave it and it disappears from your chats list.", r.kind === "group" ? "Leave and block" : "Block chat", () => blockRoom(r));
+  const mute0 = q("#rMute"); if (mute0 && r.kind !== "group") mute0.onchange = async e => { await sb.from("room_members").update({ muted: e.target.checked }).eq("room_id", r.id).eq("user_id", S.uid); const u = S.unread.get(r.id); if (u) u.muted = e.target.checked; paintUnread(); re(); };
+  if (r.kind !== "group") { if (q("#rLeave")) q("#rLeave").onclick = () => confirmBox(`Leave ${esc(r.name)}? You'll stay in ${esc(r.board || "the board")} and can rejoin the chat any time.`, "Leave chat", async () => { if (await call("leave_room", { r: r.id }, "You left " + r.name)) { S.unread.delete(r.id); paintUnread(); S.roomSettings = false; re(); } }); return; }
   const mute = q("#rMute"); if (mute) mute.onchange = async e => { await sb.from("room_members").update({ muted: e.target.checked }).eq("room_id", r.id).eq("user_id", S.uid); const u = S.unread.get(r.id); if (u) u.muted = e.target.checked; paintUnread(); re(); };
   q("#rLeave").onclick = () => confirmBox("Leave this group? You'll need someone to add you back.", "Leave", async () => { if (await call("leave_room", { r: r.id }, "You left " + r.name)) { S.room = null; S.roomSettings = false; re(); } });
   if (q("#rDelete")) q("#rDelete").onclick = () => confirmBox("Delete this group for everyone? All messages in it are deleted. This can't be undone.", "Delete group", async () => { if (await call("delete_group", { r: r.id }, r.name + " was deleted")) { S.room = null; S.roomSettings = false; re(); } });
@@ -793,10 +813,10 @@ function confirmBlock(id) {
   $("#bYes").onclick = async () => { const { error } = await sb.from("blocks").insert({ kind: "user", target: id }); if (error && !/duplicate/.test(error.message)) { toast(errMsg(error)); return; } S.blocks.user.add(id); close(); render(); toast("Blocked. Undo any time in Settings."); };
 }
 async function blockRoom(r) {
-  if (r.kind === "group") { const { error } = await sb.rpc("leave_room", { r: r.id }); if (error) { toast(errMsg(error)); return; } }
+  if (r.kind === "group" || inRoom(r)) { const { error } = await sb.rpc("leave_room", { r: r.id }); if (error) { toast(errMsg(error)); return; } }
   await sb.from("blocks").insert({ kind: "room", target: r.id }); S.blocks.room.add(r.id); S.room = null; S.roomSettings = false; render(); toast("Blocked " + r.name);
 }
-async function blockBoard(b) { await sb.from("blocks").insert({ kind: "board", target: b }); S.blocks.board.add(b); S.joined.delete(b); store.set("joined:" + S.uid, [...S.joined]); if (S.filter === b) S.filter = "All"; render(); toast("Blocked " + b); }
+async function blockBoard(b) { await sb.from("blocks").insert({ kind: "board", target: b }); S.blocks.board.add(b); if (S.joined.has(b)) await joinBoard(b, false); if (S.filter === b) S.filter = "All"; render(); toast("Blocked " + b); }
 function reportModal(t) {
   const grp = t.kind === "board" ? "board" : (t.kind === "group" || t.kind === "room") ? "group" : "person";
   const close = modal(`<div class="pmhead"><h2>Report ${KIND_LABEL[t.kind]}</h2><button class="btn small" id="pmX">Cancel</button></div>
