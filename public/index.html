@@ -408,6 +408,18 @@ html,body{overflow-x:hidden;overflow-x:clip;max-width:100%}
   .paytable td.psrc{grid-column:1/-1;flex-direction:row;gap:6px;align-items:baseline}
   .paytable td.psrc::before{font-size:10px}
 }
+/* phones: an open chat or DM goes full screen so the type bar is always visible, even with the keyboard up */
+@media (max-width:720px){
+  .chatwrap.hasroom .thread{position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:55;background:var(--surface);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  .chatwrap.hasroom .thread .threadhead{flex:none;flex-wrap:nowrap;padding:8px 12px}
+  .chatwrap.hasroom .thread .threadhead h2{font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chatwrap.hasroom .thread .threadhead .muted{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chatwrap.hasroom .thread .threadhead .row{flex-wrap:nowrap}
+  .chatwrap.hasroom .thread .msgs{flex:1;min-height:0;overscroll-behavior:contain}
+  .chatwrap.hasroom .thread .rset,.chatwrap.hasroom .thread .lockpane{flex:1;min-height:0;overflow:auto}
+  .chatwrap.hasroom .thread .sendbar{flex:none;background:var(--surface)}
+  body.chatopen .tabs,body.chatopen .rplayer{visibility:hidden}
+}
 .mobonly{display:none}
 .mobrail{display:none}
 @media (max-width:1060px){.mobrail{display:block;margin-bottom:14px}}
@@ -572,10 +584,10 @@ html,body{overflow-x:hidden;overflow-x:clip;max-width:100%}
 <noscript><p style="padding:20px">Unbadged needs JavaScript turned on.</p></noscript>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/lib.js?v=1792089106"></script>
-<script src="/holidays.js?v=1792089106"></script>
-<script src="/celebrate.js?v=1792089106"></script>
-<script src="/terms.js?v=1792089106"></script>
-<script src="/main.js?v=1792089106"></script>
+<script src="/lib.js?v=1792090485"></script>
+<script src="/holidays.js?v=1792090485"></script>
+<script src="/celebrate.js?v=1792090485"></script>
+<script src="/terms.js?v=1792090485"></script>
+<script src="/main.js?v=1792090485"></script>
 </body>
 </html>

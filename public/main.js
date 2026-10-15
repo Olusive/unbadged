@@ -1419,6 +1419,18 @@ function startLive() {
     .subscribe();
 }
 
+/* ---------- full-screen chat on phones: follow the visible area so the keyboard never hides the type bar ---------- */
+function fitChatToScreen() {
+  const vv = window.visualViewport, root = document.documentElement;
+  if (vv) { root.style.setProperty("--vvh", vv.height + "px"); root.style.setProperty("--vvtop", vv.offsetTop + "px"); }
+  const open = !!document.querySelector(".chatwrap.hasroom") && innerWidth <= 720;
+  document.body.classList.toggle("chatopen", open);
+  if (open) { const box = document.querySelector(".chatwrap.hasroom .msgs"); if (box && box.scrollHeight - box.scrollTop - box.clientHeight < 160) box.scrollTop = box.scrollHeight; }
+}
+if (window.visualViewport) { visualViewport.addEventListener("resize", fitChatToScreen); visualViewport.addEventListener("scroll", fitChatToScreen); }
+addEventListener("resize", fitChatToScreen);
+new MutationObserver(() => fitChatToScreen()).observe(document.getElementById("main"), { childList: true });
+
 /* ---------- pull to refresh (touch screens) ----------
    At the top of a page, pull down and let go to refresh. Reloads data in place,
    so the radio keeps playing and you stay on the same screen. */
