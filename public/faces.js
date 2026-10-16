@@ -39,7 +39,7 @@ const getFA = once(async function () {
       try { await fa.tf.setBackend("webgl"); } catch (e) {}
       await fa.tf.ready();
       const m = base === FACE_BASE ? base + "model" : base + "model";
-      await Promise.all([fa.nets.ssdMobilenetv1.loadFromUri(m), fa.nets.tinyFaceDetector.loadFromUri(m)]);
+      await Promise.all([fa.nets.ssdMobilenetv1.loadFromUri(m), fa.nets.tinyFaceDetector.loadFromUri(m), fa.nets.faceLandmark68Net.loadFromUri(m)]);
       return (faDet = fa);
     } catch (e) { FACE_LOG.push("face-api from " + base + ": " + (e && e.message || e)); }
   }
@@ -145,11 +145,35 @@ async function findFaces(src) {
     }
   }
   findFaces.last = cands; findFaces.people = people;
-  return fuseFaces(cands, W, H, net ? people : null);
+  const faces = fuseFaces(cands, W, H, net ? people : null);
+  if (fa) await fitFaces(fa, src, faces);
+  return faces;
 }
-// the square that gets pixelated: centered on the face, nudged up a little for the forehead, big enough for hair, beard and hat brim
+// Fit the blur to each face. A landmark model marks 68 points on the face (jawline, brows, eyes, nose, mouth, chin).
+// The square spans exactly from ear to ear and from hairline to chin, so big faces get big squares and small faces small ones.
+async function fitFaces(fa, src, faces) {
+  for (const f of faces) {
+    try {
+      const side = Math.max(f.w, f.h) * 1.35, cx = f.x + f.w / 2, cy = f.y + f.h / 2;
+      const c = document.createElement("canvas"); c.width = c.height = 112; // the landmark model's own input size
+      c.getContext("2d").drawImage(src, cx - side / 2, cy - side / 2, side, side, 0, 0, 112, 112);
+      const lm = await fa.nets.faceLandmark68Net.detectLandmarks(c);
+      const P = (Array.isArray(lm) ? lm[0] : lm).positions.map(p => ({ x: cx - side / 2 + p.x / 112 * side, y: cy - side / 2 + p.y / 112 * side }));
+      const jaw = P.slice(0, 17), brows = P.slice(17, 27), xs = jaw.map(p => p.x), browY = Math.min(...brows.map(p => p.y)), chinY = Math.max(...P.slice(5, 12).map(p => p.y));
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = browY - (chinY - browY) * 0.42, y1 = chinY + (chinY - browY) * 0.08; // hairline sits ~40% of brow-to-chin above the brows; a little room under the chin
+      const w = x1 - x0, h = y1 - y0;
+      // sanity check against the detector's box: a wild answer (blurry crop, odd angle) falls back to the box
+      const okSize = w > f.w * 0.55 && w < f.w * 1.7 && h > f.h * 0.6 && h < f.h * 1.9, mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+      const okPlace = Math.abs(mx - cx) < f.w * 0.35 && Math.abs(my - cy) < f.h * 0.4;
+      if (okSize && okPlace) f.fit = { cx: mx, cy: my, side: Math.max(w, h) * 1.08 };
+    } catch (e) {}
+  }
+}
+// the square that gets pixelated: the fitted face when we have one, otherwise sized from the detector's box
 function faceSquare(b, W, H) {
-  const s = Math.min(Math.max(b.w, b.h) * 1.25, W, H), cx = b.x + b.w / 2, cy = b.y + b.h / 2 - b.h * 0.05;
+  // fallback numbers are the median fit measured on real test photos (1.3x the detector box, nudged up 3%)
+  const cx = b.fit ? b.fit.cx : b.x + b.w / 2, cy = b.fit ? b.fit.cy : b.y + b.h / 2 - b.h * 0.03;
+  const s = Math.min(b.fit ? b.fit.side : Math.max(b.w, b.h) * 1.3, W, H);
   const x = Math.max(0, Math.min(W - s, cx - s / 2)), y = Math.max(0, Math.min(H - s, cy - s / 2));
   return { x, y, w: s, h: s };
 }
