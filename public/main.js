@@ -141,65 +141,119 @@ function openViewer(src, alt) {
 document.addEventListener("click", e => { const z = e.target.closest("img[data-zoom]"); if (z && z.src) { e.preventDefault(); e.stopPropagation(); openViewer(z.src, z.alt); } }, true);
 document.addEventListener("keydown", e => { const z = e.target.closest && e.target.closest("img[data-zoom]"); if (z && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openViewer(z.src, z.alt); } });
 
-/* ---------- face detection (runs on the device, before upload) ---------- */
-let faceDet = null;
-async function getFaceDetector() {
-  if (faceDet !== null) return faceDet;
+/* ---------- face detection (runs on the device, before upload) ----------
+   Two independent detectors vote on every face:
+   1. MediaPipe BlazeFace: fast, gives eye/nose/mouth points we use to sanity-check the shape of a face.
+   2. SSD MobileNet (trained on WIDER FACE): catches faces with masks, hats, beards, glasses, profiles, and small faces in crowds.
+   Each runs on the whole photo and on zoomed-in tiles, so small and far-away faces still get found.
+   A box is only blurred when the evidence says it's a face: one detector is very sure, or both agree. */
+let mpDet = null, ssdDet = null;
+const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(false), ms))]);
+async function getMP() {
+  if (mpDet !== null) return mpDet;
   try {
     const V = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
     const vision = await import(V);
     const files = await vision.FilesetResolver.forVisionTasks(V + "/wasm");
-    faceDet = await vision.FaceDetector.createFromOptions(files, {
+    mpDet = await vision.FaceDetector.createFromOptions(files, {
       baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite" },
-      runningMode: "IMAGE", minDetectionConfidence: 0.5,
+      runningMode: "IMAGE", minDetectionConfidence: 0.3, minSuppressionThreshold: 0.3,
     });
-  } catch (e) { faceDet = false; }
-  return faceDet;
+  } catch (e) { mpDet = false; }
+  return mpDet;
 }
-async function findFaces(cv) {
-  const fd = await getFaceDetector(); if (!fd) return null;
-  const out = [];
-  // only keep detections that look like a real face: confident, roughly square, eyes above nose above mouth
-  const looksLikeFace = (d, iw, ih, minScore) => {
-    const sc = d.categories && d.categories[0] ? d.categories[0].score : 0;
-    if (sc < minScore) return false;
-    const b = d.boundingBox, ar = b.width / b.height;
-    if (ar < 0.55 || ar > 1.6) return false;
-    const k = d.keypoints;
-    if (!k || k.length < 4) return true;
-    const px = i => ({ x: k[i].x * iw, y: k[i].y * ih });
-    const re = px(0), le = px(1), nose = px(2), mouth = px(3), eyeY = (re.y + le.y) / 2, eyeD = Math.abs(re.x - le.x);
-    if (eyeD < b.width * 0.2 || eyeD > b.width * 0.8) return false;
-    if (Math.abs(re.y - le.y) > eyeD * 0.6) return false;
-    if (!(mouth.y > eyeY + eyeD * 0.3)) return false;
-    if (nose.y < eyeY - eyeD * 0.15 || nose.y > mouth.y + eyeD * 0.15) return false;
-    const mx = (re.x + le.x) / 2;
-    if (Math.abs(nose.x - mx) > eyeD * 0.7 || Math.abs(mouth.x - mx) > eyeD * 0.7) return false;
-    return true;
-  };
-  const add = (dets, ox, oy, iw, ih, minScore) => dets.filter(d => looksLikeFace(d, iw, ih, minScore)).forEach(d => { const b = d.boundingBox; out.push({ x: ox + b.originX, y: oy + b.originY, w: b.width, h: b.height }); });
+async function getSSD() {
+  if (ssdDet !== null) return ssdDet;
   try {
-    add(fd.detect(cv).detections, 0, 0, cv.width, cv.height, 0.6);
-    // also scan four overlapping tiles so small faces in group photos get caught
-    const W = cv.width, H = cv.height, tw = Math.round(W * 0.6), th = Math.round(H * 0.6);
-    for (const [ox, oy] of [[0, 0], [W - tw, 0], [0, H - th], [W - tw, H - th]]) {
-      const t = document.createElement("canvas"); t.width = tw; t.height = th; t.getContext("2d").drawImage(cv, ox, oy, tw, th, 0, 0, tw, th);
-      add(fd.detect(t).detections, ox, oy, tw, th, 0.72);
-    }
-  } catch (e) { return out.length ? out : null; }
-  // merge boxes that overlap a lot
-  const merged = [];
-  out.forEach(b => {
-    const m = merged.find(a => { const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)), iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)); return ix * iy > 0.3 * Math.min(a.w * a.h, b.w * b.h); });
-    if (m) { const x = Math.min(m.x, b.x), y = Math.min(m.y, b.y); m.w = Math.max(m.x + m.w, b.x + b.w) - x; m.h = Math.max(m.y + m.h, b.y + b.h) - y; m.x = x; m.y = y; } else merged.push({ ...b });
+    const FA = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14";
+    const fa = await import(FA + "/dist/face-api.esm.js");
+    try { await fa.tf.setBackend("webgl"); } catch (e) {}
+    await fa.tf.ready();
+    await fa.nets.ssdMobilenetv1.loadFromUri(FA + "/model");
+    ssdDet = fa;
+  } catch (e) { ssdDet = false; }
+  return ssdDet;
+}
+function warmFaces() { getMP(); getSSD(); } // start downloading as soon as someone picks a photo
+
+// is this MediaPipe detection shaped like a real face? (eyes level, nose between eyes and mouth, mouth below eyes)
+function mpGeometryOK(d, iw, ih) {
+  const k = d.keypoints, b = d.boundingBox; if (!k || k.length < 4) return true;
+  const px = i => ({ x: k[i].x * iw, y: k[i].y * ih });
+  const re = px(0), le = px(1), nose = px(2), mouth = px(3), eyeY = (re.y + le.y) / 2, eyeD = Math.hypot(re.x - le.x, re.y - le.y);
+  if (eyeD < b.width * 0.18 || eyeD > b.width * 0.85) return false;
+  const mx = (re.x + le.x) / 2, down = Math.hypot(mouth.x - mx, mouth.y - eyeY);
+  if (down < eyeD * 0.35 || down > eyeD * 2.2) return false; // mouth sits a sensible distance below the eyes (works when the head is tilted too)
+  const dn = Math.hypot(nose.x - mx, nose.y - eyeY); if (dn > down * 1.15) return false;
+  return true;
+}
+const iou = (a, b) => { const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)), iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)), i = ix * iy; return i / (a.w * a.h + b.w * b.h - i || 1); };
+const contains = (a, b) => { const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)), iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)); return ix * iy / Math.min(a.w * a.h, b.w * b.h); };
+
+// combine every raw detection into a final list of faces. Pure function, so it can be tested on its own.
+function fuseFaces(cands, W, H) {
+  const ok = cands.filter(c => { const ar = c.w / c.h; return c.w >= 10 && c.h >= 10 && ar > 0.45 && ar < 2 && c.w * c.h < W * H * 0.95; });
+  ok.sort((a, b) => b.s - a.s);
+  const groups = [];
+  ok.forEach(c => { const g = groups.find(g => iou(g.lead, c) > 0.3 || contains(g.lead, c) > 0.7); if (g) g.items.push(c); else groups.push({ lead: c, items: [c] }); });
+  const faces = [];
+  groups.forEach(g => {
+    const mp = g.items.filter(c => c.src === "mp"), ssd = g.items.filter(c => c.src === "ssd");
+    const mpBest = Math.max(0, ...mp.filter(c => c.geo).map(c => c.s)), mpAny = Math.max(0, ...mp.map(c => c.s)), ssdBest = Math.max(0, ...ssd.map(c => c.s));
+    const views = new Set(g.items.map(c => c.src + c.view)).size;
+    const isFace =
+      ssdBest >= 0.5 ||                                   // the occlusion-trained detector is sure (masks, hats, beards, glasses)
+      (mpBest >= 0.62) ||                                 // BlazeFace is sure and the eyes/nose/mouth line up
+      (ssdBest >= 0.3 && mpBest >= 0.3) ||                // both detectors see a face here, and the eyes/nose/mouth line up
+      (ssdBest >= 0.4 && mpAny >= 0.3) ||                 // both see it, but a mask or hand hides the mouth
+      (ssdBest >= 0.42 && views >= 2) ||                  // seen again at a different zoom
+      (mpBest >= 0.45 && views >= 2);
+    if (!isFace) return;
+    // average the strongest boxes (weighted by confidence) for a steady, tight box
+    const top = g.items.slice(0, 4), sw = top.reduce((a, c) => a + c.s, 0) || 1;
+    const avg = k => top.reduce((a, c) => a + c[k] * c.s, 0) / sw;
+    faces.push({ x: avg("x"), y: avg("y"), w: avg("w"), h: avg("h"), s: Math.max(mpAny, ssdBest) });
   });
-  return merged;
+  // drop a box that sits inside a bigger face (e.g. a second hit on the same face)
+  return faces.filter(f => !faces.some(o => o !== f && o.w * o.h > f.w * f.h && contains(o, f) > 0.6));
+}
+
+async function findFaces(src) {
+  const [mp, ssd] = await Promise.all([withTimeout(getMP(), 25000), withTimeout(getSSD(), 30000)]);
+  if (!mp && !ssd) return null;
+  const W = src.width, H = src.height, cands = [];
+  // look at the whole photo, then zoom into overlapping tiles so small faces get enough pixels
+  const views = [["full", 0, 0, W, H]];
+  const grid = (n, f) => { const tw = Math.round(W * f), th = Math.round(H * f); for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) views.push([`${n}:${i}${j}`, Math.round((W - tw) * (n === 1 ? 0 : i / (n - 1))), Math.round((H - th) * (n === 1 ? 0 : j / (n - 1))), tw, th]); };
+  grid(2, 0.6);
+  if (Math.max(W, H) >= 900) grid(3, 0.42);
+  for (const [view, ox, oy, tw, th] of views) {
+    const up = Math.min(2, Math.max(1, 640 / Math.max(tw, th)));
+    const t = document.createElement("canvas"); t.width = Math.round(tw * up); t.height = Math.round(th * up);
+    t.getContext("2d").drawImage(src, ox, oy, tw, th, 0, 0, t.width, t.height);
+    const back = (x, y, w, h) => ({ x: ox + x / up, y: oy + y / up, w: w / up, h: h / up });
+    if (mp) try {
+      mp.detect(t).detections.forEach(d => { const b = d.boundingBox, s = d.categories && d.categories[0] ? d.categories[0].score : 0; cands.push({ ...back(b.originX, b.originY, b.width, b.height), s, src: "mp", view, geo: mpGeometryOK(d, t.width, t.height) }); });
+    } catch (e) {}
+    if (ssd && !view.startsWith("3:")) try { // the heavier detector skips the finest tiles to keep it quick on phones
+      const res = await ssd.detectAllFaces(t, new ssd.SsdMobilenetv1Options({ minConfidence: 0.3, maxResults: 100 }));
+      res.forEach(d => { const b = d.box; cands.push({ ...back(b.x, b.y, b.width, b.height), s: d.score, src: "ssd", view }); });
+    } catch (e) {}
+  }
+  return fuseFaces(cands, W, H);
+}
+// the square that gets pixelated: centered on the face, nudged up a little for the forehead, big enough for hair, beard and hat brim
+function faceSquare(b, W, H) {
+  const s = Math.min(Math.max(b.w, b.h) * 1.25, W, H), cx = b.x + b.w / 2, cy = b.y + b.h / 2 - b.h * 0.05;
+  const x = Math.max(0, Math.min(W - s, cx - s / 2)), y = Math.max(0, Math.min(H - s, cy - s / 2));
+  return { x, y, w: s, h: s };
 }
 
 function processPhoto(file, pctx, done) {
+  if (pctx.blur) warmFaces();
   const close = modal(`<div class="pmhead"><h2>Photo check</h2><button class="btn small" id="pmX">Cancel</button></div>
    <div class="pmsteps" id="pmSteps"><span class="muted" style="font-size:13px">Checking photo…</span></div>
-   <div class="pmcanvas"><canvas id="pmC" aria-label="Photo preview. Tap to blur a spot."></canvas></div>
+   <div class="pmcanvas"><div class="pmwrap"><canvas id="pmC" aria-label="Photo preview. Tap to blur a spot."></canvas><div class="pmboxes" id="pmBoxes" aria-hidden="true"></div></div></div>
    <p class="fine" id="pmHint" style="margin:0"></p>
    <div class="row"><span class="fine" style="flex:1;min-width:160px">${esc(pctx.note)}</span><button class="btn small" id="pmUndo" hidden>Undo last blur</button><button class="btn primary" id="pmOk" disabled>Use photo</button></div>`);
   const r = new FileReader();
@@ -208,22 +262,45 @@ function processPhoto(file, pctx, done) {
     im.onload = async () => {
       const sc = Math.min(1, 1600 / Math.max(im.naturalWidth, im.naturalHeight)), W = Math.round(im.naturalWidth * sc), H = Math.round(im.naturalHeight * sc);
       const cv = $("#pmC"); if (!cv) return; cv.width = W; cv.height = H; const g = cv.getContext("2d");
+      const src = document.createElement("canvas"); src.width = W; src.height = H; src.getContext("2d").drawImage(im, 0, 0, W, H); // clean copy for the detectors
       let auto = [], manual = [];
-      const draw = () => { g.drawImage(im, 0, 0, W, H); [...auto, ...manual].forEach(b => pixelate(g, im, b, W, H)); const u = $("#pmUndo"); if (u) u.hidden = !manual.length; };
+      const boxes = () => { const el = $("#pmBoxes"); if (!el) return; el.innerHTML = [...auto.map(b => [b, "auto"]), ...manual.map(b => [b, "manual"])].map(([b, k]) => `<i class="fbox ${k}" style="left:${b.x / W * 100}%;top:${b.y / H * 100}%;width:${b.w / W * 100}%;height:${b.h / H * 100}%"></i>`).join(""); };
+      const draw = () => { g.drawImage(im, 0, 0, W, H); [...auto, ...manual].forEach(b => pixelate(g, im, b, W, H)); const u = $("#pmUndo"); if (u) u.hidden = !manual.length; boxes(); };
       draw();
       const steps = $("#pmSteps"), add = (t, cls = "okchip") => { if (!steps) return; if (steps.querySelector(".muted")) steps.innerHTML = ""; steps.insertAdjacentHTML("beforeend", `<span class="${cls}">${t}</span>`); };
       add("✓ Location and camera data removed");
       let hint = "Tap anywhere on the photo to blur something yourself.";
       if (pctx.blur) {
-        add("Finding faces…", "sample");
-        const f = await findFaces(cv);
+        add("Scanning for faces…", "sample");
+        let result, finished = false; findFaces(src).then(f => { result = f; finished = true; }, () => { result = null; finished = true; });
+        const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, SWEEP = 1400, t0 = performance.now();
+        await new Promise(resolve => {
+          if (reduce) { const wait = () => finished ? resolve() : setTimeout(wait, 100); return wait(); }
+          let doneSweep = -1;
+          const frame = now => {
+            if (!$("#pmC")) return resolve(); // closed
+            const n = Math.floor((now - t0) / SWEEP), p = ((now - t0) % SWEEP) / SWEEP, y = p * H;
+            if (finished && doneSweep < 0) doneSweep = n;
+            const faces = finished && result ? result.map(b => faceSquare(b, W, H)) : [];
+            if (doneSweep >= 0 && n > doneSweep) { auto = faces; return resolve(); }
+            g.drawImage(im, 0, 0, W, H);
+            faces.forEach(b => { if (b.y + b.h / 2 < y) { pixelate(g, im, b, W, H); g.save(); g.strokeStyle = "#ff7b30"; g.lineWidth = Math.max(2, W / 400); g.strokeRect(b.x, b.y, b.w, b.h); g.restore(); } });
+            const band = Math.max(28, H * 0.12), grad = g.createLinearGradient(0, y - band, 0, y);
+            grad.addColorStop(0, "rgba(255,123,48,0)"); grad.addColorStop(1, "rgba(255,123,48,.35)");
+            g.fillStyle = grad; g.fillRect(0, y - band, W, band);
+            g.fillStyle = "#ff7b30"; g.shadowColor = "#ff7b30"; g.shadowBlur = Math.max(8, H / 60); g.fillRect(0, y - Math.max(2, H / 300), W, Math.max(3, H / 150)); g.shadowBlur = 0;
+            requestAnimationFrame(frame);
+          };
+          requestAnimationFrame(frame);
+        });
+        if (!$("#pmC")) return;
         steps && steps.lastElementChild && steps.lastElementChild.remove();
-        if (f === null) hint = "Face detection couldn't load on this device. Tap each face to blur it before you post.";
-        else { auto = f; hint = "Tap to blur anything it missed."; }
-        draw(); add(auto.length ? `✓ ${auto.length} face${auto.length > 1 ? "s" : ""} blurred` : "No faces found", auto.length ? "okchip" : "sample");
+        if (result === null) hint = "Face detection couldn't load on this device. Tap each face to blur it before you post.";
+        else { auto = result.map(b => faceSquare(b, W, H)); hint = "Tap to blur anything it missed."; }
+        draw(); add(auto.length ? `✓ ${auto.length} face${auto.length > 1 ? "s" : ""} blurred` : result === null ? "Faces not checked" : "No faces found", auto.length ? "okchip" : "sample");
       } else add("Faces left visible (allowed here)", "sample");
       $("#pmHint").textContent = hint; $("#pmOk").disabled = false;
-      cv.onclick = e => { const rc = cv.getBoundingClientRect(), x = (e.clientX - rc.left) * W / rc.width, y = (e.clientY - rc.top) * H / rc.height, s = Math.min(W, H) * .2; manual.push({ x: x - s / 2, y: y - s / 2, w: s, h: s }); draw(); };
+      cv.onclick = e => { const rc = cv.getBoundingClientRect(), x = (e.clientX - rc.left) * W / rc.width, y = (e.clientY - rc.top) * H / rc.height, s = Math.min(W, H) * .2; manual.push({ x: Math.max(0, Math.min(W - s, x - s / 2)), y: Math.max(0, Math.min(H - s, y - s / 2)), w: s, h: s }); draw(); };
       $("#pmUndo").onclick = () => { manual.pop(); draw(); };
       $("#pmOk").onclick = () => { const url = cv.toDataURL("image/jpeg", .85); close(); done(url); };
     };

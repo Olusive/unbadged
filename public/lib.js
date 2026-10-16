@@ -99,11 +99,12 @@ const WAGES=WAGE_ROWS.map(([cat,co,role,lo,med,hi,bls])=>({cat,co,role,lo,med,hi
 const WAGE_CATS=[...new Set(WAGES.map(w=>w.cat))];
 const wLabel=w=>(w.co==="Any employer"?"":w.co+" · ")+w.role;
 function pixelate(g,img,b,W,H){
-  const x=Math.max(0,b.x-b.w*.15),y=Math.max(0,b.y-b.h*.2),w=Math.min(W-x,b.w*1.3),h=Math.min(H-y,b.h*1.4);
-  const t=document.createElement("canvas");t.width=6;t.height=Math.max(2,Math.round(6*h/w));
+  // square mosaic over exactly the box we're given (faces come in already sized by faceSquare)
+  const x=Math.max(0,b.x),y=Math.max(0,b.y),w=Math.min(W-x,b.w),h=Math.min(H-y,b.h);if(w<2||h<2)return;
+  const n=8,t=document.createElement("canvas");t.width=n;t.height=Math.max(2,Math.round(n*h/w));
   const sx=img.naturalWidth/W,sy=img.naturalHeight/H;
   t.getContext("2d").drawImage(img,x*sx,y*sy,w*sx,h*sy,0,0,t.width,t.height);
-  g.save();g.beginPath();g.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,7);g.clip();g.imageSmoothingEnabled=false;g.drawImage(t,0,0,t.width,t.height,x,y,w,h);g.restore();
+  g.save();g.imageSmoothingEnabled=false;g.drawImage(t,0,0,t.width,t.height,x,y,w,h);g.restore();
 }
 function sw(id,on,label,sub){return `<label class="setrow"><span><b>${label}</b><small>${sub}</small></span><span class="switch"><input type="checkbox" id="${id}" ${on?"checked":""}></span></label>`}
 const ACCENTS=[["Safety orange","#ff7b30"],["Electric blue","#4ea8ff"],["Teal","#2dd4bf"],["Green","#4ade80"],["Gold","#f5b83d"],["Red","#ff6363"],["Pink","#f472b6"],["Purple","#a78bfa"]];
