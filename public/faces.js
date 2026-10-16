@@ -14,10 +14,10 @@
 const FACE_BASE = ((document.currentScript && document.currentScript.src) || location.href).split(/[?#]/)[0].replace(/[^/]*$/, "") + "vendor/face-api/";
 const FACE_LOG = [];
 let mpDet = null, faDet = null;
-const withTimeout = (p, ms, what) => Promise.race([p, new Promise(r => setTimeout(() => { FACE_LOG.push(what + " timed out"); r(false); }, ms))]);
+const withTimeout = (p, ms, what) => { let done = false; p.then(() => { done = true; }, () => { done = true; }); return Promise.race([p, new Promise(r => setTimeout(() => { if (!done) FACE_LOG.push(what + " timed out"); r(false); }, ms))]); };
+const once = f => { let p = null; return (...a) => p || (p = f(...a)); }; // download each model only once, even if asked twice
 
-async function getMP() {
-  if (mpDet !== null) return mpDet;
+const getMP = once(async function () {
   for (const host of ["https://cdn.jsdelivr.net/npm", "https://unpkg.com"]) {
     try {
       const V = host + "/@mediapipe/tasks-vision@0.10.14";
@@ -31,9 +31,8 @@ async function getMP() {
     } catch (e) { FACE_LOG.push("BlazeFace from " + host + ": " + (e && e.message || e)); }
   }
   return (mpDet = false);
-}
-async function getFA() {
-  if (faDet !== null) return faDet;
+});
+const getFA = once(async function () {
   for (const base of [FACE_BASE, "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/"]) {
     try {
       const fa = await import(base.replace(/\/$/, "") + (base === FACE_BASE ? "/face-api.esm.js" : "/dist/face-api.esm.js"));
@@ -45,13 +44,12 @@ async function getFA() {
     } catch (e) { FACE_LOG.push("face-api from " + base + ": " + (e && e.message || e)); }
   }
   return (faDet = false);
-}
+});
 let poseNet = null;
-async function getPose(fa) {
-  if (poseNet !== null) return poseNet;
+const getPose = once(async function (fa) {
   try { poseNet = await fa.tf.loadGraphModel(FACE_BASE + "model/movenet-multipose.json"); } catch (e) { FACE_LOG.push("MoveNet: " + (e && e.message || e)); poseNet = false; }
   return poseNet;
-}
+});
 // people in one region of the photo: head points (nose, eyes, ears) in full-photo pixels
 async function findPeople(fa, net, src, ox, oy, tw, th) {
   const S = Math.max(tw, th), c = document.createElement("canvas"); c.width = c.height = 256;
