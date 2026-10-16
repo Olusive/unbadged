@@ -1,0 +1,2 @@
+face-api.esm.js and ssd_mobilenetv1 / tiny_face_detector / face_landmark_68: @vladmandic/face-api 1.7.15 (MIT, see LICENSE.txt)
+movenet-multipose: MoveNet MultiPose Lightning by Google (Apache 2.0), tfjs conversion from vladmandic/human-models
