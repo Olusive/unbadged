@@ -1210,7 +1210,7 @@ function paintRadio() {
   document.body.classList.toggle("hasplayer", !!R.now);
   if (!R.now) { bar.hidden = true; } else {
     const st = R.now, live = R.state === "playing", tabs = $("#tabs");
-    bar.hidden = false; bar.style.bottom = (tabs && getComputedStyle(tabs).display !== "none" ? tabs.offsetHeight : 0) + "px";
+    bar.hidden = false; bar.style.bottom = "calc(" + (tabs && getComputedStyle(tabs).display !== "none" ? tabs.offsetHeight : 0) + "px - var(--fixgap, 0px))";
     bar.innerHTML = `${stIcon(st, "sm")}<button class="rpinfo" id="rpGo"><b>${esc(st.name)}</b><span>${live ? EQ + "LIVE" : R.state === "loading" ? "Tuning in…" : "Paused"} · Break Room Radio</span></button>
      <button class="rpbtn" id="rpPlay" aria-label="${live || R.state === "loading" ? "Pause" : "Play"}">${live || R.state === "loading" ? PAUSE_I : PLAY_I}</button><button class="rpx" id="rpStop" aria-label="Stop radio">✕</button>`;
     $("#rpPlay").onclick = () => playStation(st); $("#rpStop").onclick = stopRadio; $("#rpGo").onclick = () => go("radio");

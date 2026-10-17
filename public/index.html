@@ -576,6 +576,17 @@ html,body,body *{touch-action:pan-x pan-y}
 .terms h1{font-size:30px}.terms h2{font-size:21px;margin-top:10px}.terms p,.terms li{font-size:15px;line-height:1.55}.terms ul{padding-left:20px;display:flex;flex-direction:column;gap:6px}
 .msg .who .fine{margin-left:4px}
 .cmt .who2 .fine{margin-left:2px}
+/* ---- screen fit (screenfit.js measures the real screen; same approach as Firefly Dash) ---- */
+@media (max-width:720px){
+  html,body{height:var(--app-h,100%)}
+  .app{position:fixed;top:0;left:0;right:0;bottom:auto;height:var(--app-h,100%)}
+  .tabs{position:absolute;left:0;right:0;bottom:0}
+  .overlay{bottom:calc(0px - var(--fixgap,0px))}
+  .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px) - var(--fixgap,0px))}
+  body.hasplayer .toast{bottom:calc(150px + env(safe-area-inset-bottom,0px) - var(--fixgap,0px))}
+  html.kbopen .tabs{visibility:hidden}
+}
+#fitdiag{position:fixed;top:calc(env(safe-area-inset-top,0px) + 60px);left:8px;right:8px;z-index:200;margin:0;background:rgba(2,3,6,.94);color:#bdf7ff;font:12px/1.5 var(--f-mono);padding:12px;border-radius:8px;white-space:pre-wrap;border:1px solid #2b3b4f}
 </style>
 </head>
 <body>
@@ -606,11 +617,12 @@ html,body,body *{touch-action:pan-x pan-y}
 <noscript><p style="padding:20px">Unbadged needs JavaScript turned on.</p></noscript>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/lib.js?v=1792141073"></script>
-<script src="/holidays.js?v=1792141073"></script>
-<script src="/celebrate.js?v=1792141073"></script>
-<script src="/terms.js?v=1792141073"></script>
-<script src="/faces.js?v=1792141073"></script>
-<script src="/main.js?v=1792141073"></script>
+<script src="/screenfit.js?v=1792219107"></script>
+<script src="/lib.js?v=1792219107"></script>
+<script src="/holidays.js?v=1792219107"></script>
+<script src="/celebrate.js?v=1792219107"></script>
+<script src="/terms.js?v=1792219107"></script>
+<script src="/faces.js?v=1792219107"></script>
+<script src="/main.js?v=1792219107"></script>
 </body>
 </html>
